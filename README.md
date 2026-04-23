@@ -1,55 +1,143 @@
-# Attendance Face Detection (FastAPI + ML)
+# Attendance Face Detection Backend (FastAPI + Computer Vision)
 
-This project is the face-recognition backend and public check-in page.
+This repository is the backend and public-user interface for a face-recognition attendance system. It handles model inference, real-time video streaming, attendance logging, and admin data APIs used by the separate Next.js admin portal.
 
-It provides:
-- Live face detection and recognition stream
-- Attendance logging to daily CSV files
-- Admin APIs consumed by the Next.js admin portal
-- Public Jinja2 page for face check-in only
+## Abstract
 
-## Project Role in Fullstack Architecture
+The system applies a practical face-recognition workflow for attendance in educational or workplace settings. A webcam stream is processed in real time using facial landmarks and a trained classifier. Recognized users are logged to daily attendance files, while duplicate logs are suppressed within a 2-minute window to keep records clean.
+
+## Table of Contents
+
+- Introduction
+- Literature Review
+- Methodology
+- Results
+- Discussion
+- Conclusion
+- System Architecture
+- Installation and Setup
+- Running the System
+- API Endpoints
+- Project Structure
+- Troubleshooting
+
+## Introduction
+
+Manual attendance processes are slow, error-prone, and difficult to audit in high-volume environments. This project introduces an automated attendance backend that combines real-time computer vision and web APIs.
+
+Core objectives:
+- Detect and recognize faces from a live webcam feed.
+- Log attendance automatically in a structured format.
+- Serve a simple public page for check-in/check-out interaction.
+- Expose clean API endpoints for an external admin dashboard.
+
+## Literature Review
+
+Modern face-recognition attendance systems are usually built on three pillars:
+
+1. Facial representation learning:
+Classic methods (e.g., Eigenfaces/Fisherfaces) were lightweight but sensitive to pose and lighting. Deep learning methods significantly improved robustness.
+
+2. Landmark-based geometric understanding:
+Landmark detectors improve stability for non-frontal faces and support feature engineering from key facial points.
+
+3. Operational logging and web integration:
+Practical systems require not only recognition accuracy but also repeat suppression, API integration, and maintainable user/admin interfaces.
+
+This project follows a hybrid practical approach using MediaPipe landmarks + TensorFlow classifier + FastAPI service architecture.
+
+## Methodology
+
+### 1. Data Collection
+
+The dataset is collected using guided pose zones via `src/collect.py`:
+- Front, left, right, up, down, near, far
+- Automatic augmentation for brightness, blur, and mirroring
+
+### 2. Feature Extraction
+
+`src/extract.py` extracts:
+- Landmark coordinates
+- Geometric distances
+- Pose-related angular signals
+
+### 3. Model Training
+
+`src/train.py` performs:
+- Label encoding
+- Feature scaling (`StandardScaler`)
+- Neural network training with regularization and callbacks
+
+### 4. Inference and Logging
+
+`services/face_service.py` manages:
+- Real-time frame processing
+- Prediction smoothing via rolling buffer
+- Confidence threshold filtering
+- Attendance write action through `services/attendance_service.py`
+
+Duplicate suppression policy:
+- Same person is not re-logged within 120 seconds (minimum enforced in code).
+
+### 5. Public and Admin Access
+
+- Public page (`/`) is Jinja2-rendered for user interaction.
+- Admin data is exposed through JSON APIs under `/api/admin/*`.
+
+## Results
+
+Current implementation provides:
+- Real-time face detection/recognition stream at `/stream`.
+- Public first-step action UX (Check In / Check Out) before starting detection.
+- Attendance logs by date in CSV format.
+- Admin-compatible API endpoints for dashboard, persons, and attendance history.
+- Duplicate event suppression (2-minute window) for timeline clarity.
+
+Artifacts produced after training:
+- `models/face_model.h5`
+- `models/label_encoder.pkl`
+- `models/scaler.pkl`
+- `models/landmarks_data.pkl`
+
+## Discussion
+
+Strengths:
+- Clear separation between backend inference and admin frontend.
+- Practical, reproducible training pipeline.
+- Low operational overhead with CSV-based logging.
+
+Limitations:
+- No long-term database persistence by default for attendance records.
+- Accuracy depends on dataset quality, lighting, and camera placement.
+- Single-camera/single-feed assumptions in current deployment pattern.
+
+Future enhancements:
+- Add database-backed attendance records.
+- Add anti-spoofing/liveness checks.
+- Add multi-camera and role-based access control.
+
+## Conclusion
+
+This backend demonstrates a deployable and maintainable face-attendance pipeline that balances model practicality, system simplicity, and integration readiness. It is suitable as a final-year project foundation and can be extended into production-grade architecture with database and security upgrades.
+
+## System Architecture
 
 - Backend/API app: `attendance-face-detection`
 - Admin frontend app: `attendance-face-detection-admin`
 
-This backend serves:
-- Public page at `/`
-- MJPEG stream at `/stream`
-- Admin JSON APIs at `/api/admin/*`
+Exposed backend interfaces:
+- Public page: `/`
+- Stream endpoint: `/stream`
+- Admin APIs: `/api/admin/*`
 
-## Tech Stack
+## Installation and Setup
 
-- FastAPI
-- MediaPipe Face Landmarker
-- TensorFlow / Keras
-- OpenCV
-- scikit-learn
-- Jinja2 (public page only)
-
-## Key Folders
-
-- `routes/` API and page routes
-- `services/` face pipeline and attendance logic
-- `schemas/` Pydantic response models
-- `src/` data collection, extraction, and training scripts
-- `templates/` public page template
-- `static/` public page assets
-- `models/` ML assets (`.task`, `.h5`, encoder, scaler)
-- `dataset/` collected face images
-- `logs/` daily attendance CSV files
-
-## Prerequisites
-
+Prerequisites:
 - Python 3.10+
 - Webcam device
 - OS camera permissions enabled
 
-## Installation
-
-1. Create and activate a virtual environment.
-2. Install dependencies.
-3. Copy env file.
+Install:
 
 ```bash
 python -m venv .venv
@@ -58,65 +146,35 @@ pip install -r requirements.txt
 cp .env.example .env
 ```
 
-## Environment Variables
-
-Use `.env` (from `.env.example`):
-
-- `CONFIDENCE_THRESHOLD` recognition confidence threshold
-- `RECOGNITION_COOLDOWN` minimum seconds before re-logging same person
-- `BUFFER_SIZE` rolling prediction buffer size
-- `WEBCAM_INDEX` webcam index
-- `FRAME_WIDTH`, `FRAME_HEIGHT` capture size
-- `HOST`, `PORT` FastAPI server host/port
-- `ADMIN_ORIGIN` CORS origin for Next.js admin
-
-## First-Time Model Setup
-
-Run once to download MediaPipe model:
+First-time model asset setup:
 
 ```bash
 python setup.py
 ```
 
-## Data and Training Pipeline
+## Running the System
 
-1. Collect images by guided pose zones:
+### Training Pipeline
 
 ```bash
 python src/collect.py
-```
-
-2. Extract facial landmark features:
-
-```bash
 python src/extract.py
-```
-
-3. Train classifier model:
-
-```bash
 python src/train.py
 ```
 
-Generated artifacts:
-- `models/face_model.h5`
-- `models/label_encoder.pkl`
-- `models/scaler.pkl`
-- `models/landmarks_data.pkl`
-
-## Run Backend
+### Start FastAPI Server
 
 ```bash
 uvicorn main:app --reload --host 0.0.0.0 --port 8168
 ```
 
-## URLs
+### URLs
 
-- Public face check-in page: `http://127.0.0.1:8168/`
-- Stream endpoint: `http://127.0.0.1:8168/stream`
+- Public page: `http://127.0.0.1:8168/`
+- Stream: `http://127.0.0.1:8168/stream`
 - API docs: `http://127.0.0.1:8168/docs`
 
-## Admin API Endpoints
+## API Endpoints
 
 - `/api/admin/dashboard/summary`
 - `/api/admin/attendance/records?date=YYYY-MM-DD`
@@ -124,23 +182,36 @@ uvicorn main:app --reload --host 0.0.0.0 --port 8168
 - `/api/admin/persons/list`
 - `/api/admin/persons/stats`
 
-## Integration with Next.js Admin
+## Project Structure
 
-Set backend CORS origin in `.env`:
+- `routes/` API and page routes
+- `services/` face pipeline and attendance logic
+- `schemas/` Pydantic response models
+- `src/` collection, extraction, training scripts
+- `templates/` public page template
+- `static/` frontend assets for public page
+- `models/` trained model and preprocess artifacts
+- `dataset/` captured face images
+- `logs/` attendance CSV output
 
-```env
-ADMIN_ORIGIN=http://localhost:3000
-```
+## Environment Variables
 
-Then run the admin project separately and point it to this API.
+Main variables in `.env`:
+- `CONFIDENCE_THRESHOLD`
+- `RECOGNITION_COOLDOWN` (minimum enforced: 120)
+- `BUFFER_SIZE`
+- `WEBCAM_INDEX`
+- `FRAME_WIDTH`, `FRAME_HEIGHT`
+- `HOST`, `PORT`
+- `ADMIN_ORIGIN`
 
 ## Troubleshooting
 
-- Model not ready in UI:
+- Model not ready:
   - Run `python src/train.py`
-  - Restart FastAPI server
-- No face detected:
-  - Ensure webcam index is correct (`WEBCAM_INDEX`)
-  - Improve lighting / camera distance
-- CORS errors in admin app:
-  - Ensure `ADMIN_ORIGIN` matches your admin URL
+  - Restart server
+- No detections:
+  - Check lighting and camera angle
+  - Verify `WEBCAM_INDEX`
+- Admin CORS issue:
+  - Set `ADMIN_ORIGIN=http://localhost:3000`

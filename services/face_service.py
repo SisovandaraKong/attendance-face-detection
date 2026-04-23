@@ -45,7 +45,8 @@ TASK_FILE   = os.path.join(BASE_DIR, "models", "face_landmarker.task")
 
 # ── Tunable inference constants ──────────────────────────────
 CONFIDENCE_THRESHOLD = float(os.getenv("CONFIDENCE_THRESHOLD", "0.92"))
-RECOGNITION_COOLDOWN = int(os.getenv("RECOGNITION_COOLDOWN", "3"))   # seconds
+# Keep timeline clean: never allow duplicate logs for the same person within 2 minutes.
+RECOGNITION_COOLDOWN = max(int(os.getenv("RECOGNITION_COOLDOWN", "120")), 120)
 BUFFER_SIZE          = int(os.getenv("BUFFER_SIZE", "15"))           # frames
 WEBCAM_INDEX         = int(os.getenv("WEBCAM_INDEX", "0"))
 FRAME_WIDTH          = int(os.getenv("FRAME_WIDTH", "1280"))

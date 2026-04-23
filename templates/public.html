@@ -12,7 +12,7 @@
       <div>
         <p class="eyebrow">PUBLIC CHECK-IN</p>
         <h1>Face Attendance Checkpoint</h1>
-        <p class="subtitle">Stand in front of the camera. The system detects your face and shows your recognized name on the live feed.</p>
+        <p class="subtitle">Choose Check In or Check Out first, then stand in front of the camera for face recognition.</p>
       </div>
       <div class="status-wrap">
         {% if model_ready %}
@@ -24,16 +24,27 @@
       </div>
     </section>
 
-    <section class="content-grid">
+    <section class="action-card" id="mode-picker">
+      <p class="action-step">Step 1</p>
+      <h2>Choose Attendance Action</h2>
+      <p class="action-copy">Face detection will start only after you choose one action.</p>
+      <div class="action-buttons">
+        <button type="button" class="action-btn check-in" data-mode="check-in">Check In</button>
+        <button type="button" class="action-btn check-out" data-mode="check-out">Check Out</button>
+      </div>
+    </section>
+
+    <section class="content-grid detection-hidden" id="detection-area">
       <article class="camera-card">
         <div class="card-head">
           <h2>Live Detection Feed</h2>
-          <span class="dot">LIVE</span>
+          <span id="mode-chip" class="mode-chip"></span>
         </div>
 
         <div class="feed-shell">
           {% if model_ready %}
-            <img id="webcam-feed" src="/stream" alt="Live face detection stream" />
+            <div id="feed-idle" class="feed-idle">Click Check In or Check Out to start camera.</div>
+            <img id="webcam-feed" class="feed-image-hidden" data-stream-url="/stream" alt="Live face detection stream" />
           {% else %}
             <div class="placeholder">Train the model, then restart server.</div>
           {% endif %}
