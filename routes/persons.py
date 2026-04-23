@@ -1,7 +1,7 @@
 """
 routes/persons.py
 ─────────────────────────────────────────────────────────────
-Person management page + JSON API.
+Person management JSON API for admin portal.
 
 Shows who is enrolled in the system, how many images each
 person has, and whether their dataset is complete.
@@ -10,14 +10,11 @@ person has, and whether their dataset is complete.
 
 import os
 
-from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse
-from fastapi.templating import Jinja2Templates
+from fastapi import APIRouter
 
 from schemas.attendance import APIResponse, PersonInfo, PersonListResponse
 
-router    = APIRouter(prefix="/persons", tags=["persons"])
-templates = Jinja2Templates(directory="templates")
+router = APIRouter(prefix="/api/admin/persons", tags=["admin-persons"])
 
 # Paths from project root
 BASE_DIR     = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -53,21 +50,7 @@ def _list_persons() -> list[PersonInfo]:
         ))
     return persons
 
-
-@router.get("/", response_class=HTMLResponse)
-async def persons_page(request: Request) -> HTMLResponse:
-    """Person management page."""
-    persons = _list_persons()
-    return templates.TemplateResponse(request, "persons.html", {
-        "persons":       persons,
-        "total_needed":  TOTAL_IMAGES_NEEDED,
-        "known_persons": request.app.state.face_service.known_persons,
-    })
-
-
-# ── JSON API ─────────────────────────────────────────────────
-
-@router.get("/api/list", response_model=PersonListResponse)
+@router.get("/list", response_model=PersonListResponse)
 async def api_list_persons() -> PersonListResponse:
     """Return all enrolled persons with dataset completion status."""
     try:
@@ -85,7 +68,7 @@ async def api_list_persons() -> PersonListResponse:
         )
 
 
-@router.get("/api/stats", response_model=APIResponse)
+@router.get("/stats", response_model=APIResponse)
 async def api_person_stats() -> APIResponse:
     """Return aggregate dataset stats."""
     persons = _list_persons()
@@ -98,6 +81,7 @@ async def api_person_stats() -> APIResponse:
             "complete":      complete,
             "incomplete":    len(persons) - complete,
             "total_images":  total_images,
+            "total_needed_per_person": TOTAL_IMAGES_NEEDED,
         },
         message="Dataset statistics",
     )

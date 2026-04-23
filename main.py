@@ -16,10 +16,10 @@ from typing import AsyncGenerator
 
 from dotenv import load_dotenv
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
 
-from routes import attendance, dashboard, persons, stream
+from routes import attendance, dashboard, persons, public, stream
 from services.face_service import FaceService
 
 # ── Load .env before anything reads os.getenv ───────────────
@@ -66,8 +66,19 @@ app.mount(
     name="static",
 )
 
+# ── CORS for Next.js admin portal ─────────────────────────────
+admin_origin = os.getenv("ADMIN_ORIGIN", "http://localhost:3000")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[admin_origin],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 # ── Routers ───────────────────────────────────────────────────
-app.include_router(dashboard.router)
+app.include_router(public.router)
 app.include_router(stream.router)
+app.include_router(dashboard.router)
 app.include_router(attendance.router)
 app.include_router(persons.router)

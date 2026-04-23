@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Face Detection</title>
+  <link rel="stylesheet" href="/static/css/public.css" />
+</head>
+<body>
+  <main class="shell">
+    <section class="hero">
+      <div>
+        <p class="eyebrow">PUBLIC CHECK-IN</p>
+        <h1>Face Attendance Checkpoint</h1>
+        <p class="subtitle">Stand in front of the camera. The system detects your face and shows your recognized name on the live feed.</p>
+      </div>
+      <div class="status-wrap">
+        {% if model_ready %}
+          <span class="status ok">Model ready</span>
+        {% else %}
+          <span class="status warn">Model not loaded (train model first)</span>
+        {% endif %}
+        <span class="count">Today: <strong id="today-count">{{ today_count }}</strong></span>
+      </div>
+    </section>
+
+    <section class="content-grid">
+      <article class="camera-card">
+        <div class="card-head">
+          <h2>Live Detection Feed</h2>
+          <span class="dot">LIVE</span>
+        </div>
+
+        <div class="feed-shell">
+          {% if model_ready %}
+            <img id="webcam-feed" src="/stream" alt="Live face detection stream" />
+          {% else %}
+            <div class="placeholder">Train the model, then restart server.</div>
+          {% endif %}
+        </div>
+      </article>
+
+      <aside class="recent-card">
+        <h2>Recent Recognitions</h2>
+        <div id="recent-list" class="recent-list">
+          {% for record in today_records | reverse %}
+            <div class="row">
+              <div class="avatar">{{ record.name[0] | upper }}</div>
+              <div class="meta">
+                <p class="name">{{ record.name }}</p>
+                <p class="time">{{ record.time }}</p>
+              </div>
+            </div>
+          {% else %}
+            <p class="empty">No records yet today.</p>
+          {% endfor %}
+        </div>
+      </aside>
+    </section>
+  </main>
+
+  <script src="/static/js/public.js"></script>
+</body>
+</html>
