@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard{% endblock %}
+{% block page_title %}Live Dashboard{% endblock %}
+
+{% set active_page = "dashboard" %}
+
+{% block content %}
+
+{% if not model_ready %}
+<div class="model-warning">
+  ⚠️ &nbsp;Model files not found. Run <code>python src/train.py</code> first.
+  The webcam feed is active but no predictions will be made.
+</div>
+{% endif %}
+
+<!-- ── Stat cards ──────────────────────────────────────── -->
+<div class="stats-row">
+  <div class="stat-card">
+    <div class="stat-icon">👤</div>
+    <div class="stat-value" id="today-count">{{ today_count }}</div>
+    <div class="stat-label">Present Today</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon">🗓️</div>
+    <div class="stat-value">{{ today }}</div>
+    <div class="stat-label">Date</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon">🧠</div>
+    <div class="stat-value">{{ known_persons | length }}</div>
+    <div class="stat-label">Enrolled Persons</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon">📅</div>
+    <div class="stat-value">{{ weekly_data | length }}</div>
+    <div class="stat-label">Days Logged</div>
+  </div>
+</div>
+
+<!-- ── Live feed + sidebar ──────────────────────────────── -->
+<div class="dashboard-grid">
+
+  <!-- Webcam feed -->
+  <div class="card" style="padding: 16px;">
+    <div class="card-title">Live Recognition Feed</div>
+    <div class="feed-wrapper">
+      {% if model_ready %}
+        <img id="webcam-feed" src="/stream" alt="Live webcam recognition feed" />
+        <div class="feed-overlay">🔴 LIVE</div>
+      {% else %}
+        <div class="feed-placeholder">
+          <span>📷</span>
+          <p>Train the model to start the live feed.</p>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Today's attendance sidebar -->
+  <div class="card" style="padding: 16px;">
+    <div class="flex justify-between items-center mb-16">
+      <div class="card-title" style="margin:0">Today's Attendance</div>
+      <a href="/attendance/" class="text-accent text-sm">View all →</a>
+    </div>
+
+    <div class="attendance-list" id="attendance-sidebar">
+      {% for record in today_records | reverse %}
+      <div class="record-item">
+        <div class="record-avatar">{{ record.name[0] | upper }}</div>
+        <div class="record-info">
+          <div class="record-name">{{ record.name }}</div>
+          <div class="record-time">{{ record.time }}</div>
+        </div>
+        <span class="badge-present">Present</span>
+      </div>
+      {% else %}
+      <p class="text-muted text-sm" style="padding:16px">No records yet today.</p>
+      {% endfor %}
+    </div>
+  </div>
+
+</div>
+
+<!-- ── Weekly summary ──────────────────────────────────── -->
+{% if weekly_data %}
+<div class="card mt-16">
+  <div class="card-title">Weekly Attendance Summary</div>
+  <div style="display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end;">
+    {% for date_str, count in weekly_data.items() | sort %}
+    <div style="text-align:center; flex:1; min-width:60px;">
+      <div style="
+        background: var(--accent-glow);
+        border: 1px solid var(--border-accent);
+        border-radius: 6px 6px 0 0;
+        height: {{ [count * 12, 6] | max }}px;
+        min-height: 6px;
+        transition: height 0.4s;
+      "></div>
+      <div class="text-xs text-muted mt-4">{{ date_str[5:] }}</div>
+      <div class="text-xs text-accent font-bold">{{ count }}</div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+{% endblock %}

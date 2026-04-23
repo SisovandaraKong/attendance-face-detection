@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Face Recognition Attendance System — automated attendance via MediaPipe and TensorFlow." />
+  <title>{% block title %}Face Attendance{% endblock %} — FaceID</title>
+  <link rel="stylesheet" href="/static/css/main.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎯</text></svg>" />
+</head>
+<body>
+<div class="layout">
+
+  <!-- ── Sidebar ──────────────────────────────────────────── -->
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <div class="logo-icon">🎯</div>
+      <h1>FaceID Attendance</h1>
+      <p>Final Year Project</p>
+    </div>
+
+    <nav class="sidebar-nav">
+      <a href="/"           class="nav-item {% if active_page == 'dashboard'  %}active{% endif %}" id="nav-dashboard">
+        <span class="nav-icon">📊</span> Dashboard
+      </a>
+      <a href="/attendance/" class="nav-item {% if active_page == 'attendance' %}active{% endif %}" id="nav-attendance">
+        <span class="nav-icon">📋</span> Attendance Log
+      </a>
+      <a href="/persons/"   class="nav-item {% if active_page == 'persons'    %}active{% endif %}" id="nav-persons">
+        <span class="nav-icon">👥</span> Persons
+      </a>
+    </nav>
+
+    <div class="sidebar-footer">
+      &copy; 2026 — Cambodia FYP
+    </div>
+  </aside>
+
+  <!-- ── Main ─────────────────────────────────────────────── -->
+  <div class="main">
+    <header class="topbar">
+      <span class="topbar-title">{% block page_title %}Dashboard{% endblock %}</span>
+      <div class="topbar-meta">
+        {% if model_ready is defined %}
+          {% if model_ready %}
+            <span class="status-dot online"></span> Model ready
+          {% else %}
+            <span class="status-dot offline"></span> Model not loaded
+          {% endif %}
+        {% endif %}
+        <span id="live-clock">--:--:--</span>
+      </div>
+    </header>
+
+    <main class="page-content">
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+
+</div>
+
+<script src="/static/js/main.js"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

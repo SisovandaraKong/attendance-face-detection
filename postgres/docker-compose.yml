@@ -1,0 +1,29 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: attendance-postgres
+    environment:
+      POSTGRES_DB: attendance
+      POSTGRES_USER: dara
+      POSTGRES_PASSWORD: qwer
+    ports:
+      - "5168:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - nectar-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dara"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+
+networks:
+  nectar-network:
+    driver: bridge

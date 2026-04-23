@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+
+{% block title %}Attendance Log{% endblock %}
+{% block page_title %}Attendance Log{% endblock %}
+
+{% set active_page = "attendance" %}
+
+{% block content %}
+
+<!-- ── Date filter ──────────────────────────────────────── -->
+<div class="filter-bar">
+  <label for="date-selector">Filter by date:</label>
+  <select id="date-selector">
+    {% for d in all_dates %}
+    <option value="{{ d }}" {% if d == date %}selected{% endif %}>
+      {{ d }}{% if d == today %} (Today){% endif %}
+    </option>
+    {% endfor %}
+  </select>
+
+  <span class="text-muted text-sm" style="margin-left:auto;">
+    {{ records | length }} record(s) for <strong class="text-accent">{{ date }}</strong>
+  </span>
+</div>
+
+<!-- ── Table ────────────────────────────────────────────── -->
+<div class="card">
+  {% if records %}
+  <div class="table-wrapper">
+    <table>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Name</th>
+          <th>Date</th>
+          <th>Time</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for record in records %}
+        <tr>
+          <td class="text-muted text-sm">{{ loop.index }}</td>
+          <td>
+            <div class="flex items-center gap-8">
+              <div class="record-avatar" style="width:28px;height:28px;font-size:11px;flex-shrink:0;">
+                {{ record.name[0] | upper }}
+              </div>
+              <span>{{ record.name }}</span>
+            </div>
+          </td>
+          <td class="text-muted">{{ record.date }}</td>
+          <td class="text-accent" style="font-variant-numeric:tabular-nums;">{{ record.time }}</td>
+          <td><span class="badge-present">{{ record.status }}</span></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="empty-state">
+    <span>📋</span>
+    <p>No attendance records for <strong>{{ date }}</strong>.</p>
+  </div>
+  {% endif %}
+</div>
+
+{% endblock %}

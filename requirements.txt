@@ -1,0 +1,25 @@
+# Face Recognition Attendance System — Dependencies
+
+# ── Computer vision ───────────────────────────────────────
+opencv-python>=4.8.0
+opencv-contrib-python>=4.8.0
+
+# ── Face landmarks (MediaPipe Tasks API v0.10+) ───────────
+mediapipe>=0.10.0
+
+# ── Deep learning ─────────────────────────────────────────
+tensorflow>=2.13.0
+numpy>=1.24.0
+scikit-learn>=1.3.0
+Pillow>=10.0.0
+
+# ── Web framework ─────────────────────────────────────────
+fastapi>=0.110.0
+uvicorn[standard]>=0.29.0
+jinja2>=3.1.0
+python-multipart>=0.0.9   # required for form data in FastAPI
+
+# ── Utilities ─────────────────────────────────────────────
+python-dotenv>=1.0.0
+tqdm>=4.66.0
+matplotlib>=3.7.0

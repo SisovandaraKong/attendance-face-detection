@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+
+{% block title %}Persons{% endblock %}
+{% block page_title %}Enrolled Persons{% endblock %}
+
+{% set active_page = "persons" %}
+
+{% block content %}
+
+<!-- ── Stats ────────────────────────────────────────────── -->
+<div class="stats-row" style="margin-bottom:24px;">
+  <div class="stat-card">
+    <div class="stat-icon">👥</div>
+    <div class="stat-value">{{ persons | length }}</div>
+    <div class="stat-label">Total Enrolled</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon">✅</div>
+    <div class="stat-value">{{ persons | selectattr('complete') | list | length }}</div>
+    <div class="stat-label">Dataset Complete</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon">⚠️</div>
+    <div class="stat-value">{{ persons | rejectattr('complete') | list | length }}</div>
+    <div class="stat-label">Needs More Data</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon">🧠</div>
+    <div class="stat-value">{{ known_persons | length }}</div>
+    <div class="stat-label">In Loaded Model</div>
+  </div>
+</div>
+
+<!-- ── How to add a person ────────────────────────────── -->
+<div class="card mb-16" style="margin-bottom:20px;background:var(--accent-glow);border-color:var(--border-accent);">
+  <div class="card-title" style="color:var(--accent);">➕ How to Add a New Person</div>
+  <ol style="font-size:13px;line-height:2;padding-left:20px;color:var(--text-primary);">
+    <li>Run <code style="color:var(--accent);">python src/collect.py</code> and follow the on-screen prompts</li>
+    <li>Run <code style="color:var(--accent);">python src/extract.py</code> to extract landmark features</li>
+    <li>Run <code style="color:var(--accent);">python src/train.py</code> to retrain the model</li>
+    <li>Restart the web server — the new person will appear automatically</li>
+  </ol>
+</div>
+
+<!-- ── Person cards ──────────────────────────────────── -->
+{% if persons %}
+<div class="persons-grid">
+  {% for person in persons %}
+  <div class="person-card {% if person.complete %}complete{% else %}incomplete{% endif %}">
+    <div class="person-avatar-lg">{{ person.display_name[0] | upper }}</div>
+    <div class="person-name">{{ person.display_name }}</div>
+    <div class="person-count">{{ person.image_count }} / {{ total_needed }} images</div>
+
+    <div class="progress-bar-wrap">
+      <div class="progress-bar-fill"
+           style="width: {{ [(person.image_count / total_needed * 100) | round | int, 100] | min }}%">
+      </div>
+    </div>
+
+    <div style="margin-top:10px;font-size:11px;">
+      {% if person.complete %}
+        <span style="color:var(--success);">✓ Complete</span>
+      {% else %}
+        <span style="color:var(--warning);">⚠ Incomplete</span>
+      {% endif %}
+      {% if person.display_name in known_persons %}
+        &nbsp;·&nbsp;<span style="color:var(--accent);">🧠 In model</span>
+      {% endif %}
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="empty-state">
+  <span>👥</span>
+  <p>No persons enrolled yet. Run <code>python src/collect.py</code> to get started.</p>
+</div>
+{% endif %}
+
+{% endblock %}
