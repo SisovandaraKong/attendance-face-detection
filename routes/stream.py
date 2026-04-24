@@ -8,14 +8,17 @@ permanently and receives a continuous JPEG-over-HTTP stream.
 ─────────────────────────────────────────────────────────────
 """
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Query, Request
 from fastapi.responses import StreamingResponse
 
 router = APIRouter()
 
 
 @router.get("/stream", tags=["stream"])
-async def video_stream(request: Request) -> StreamingResponse:
+async def video_stream(
+    request: Request,
+    mode: str = Query(default="check-in", pattern="^(check-in|check-out)$"),
+) -> StreamingResponse:
     """
     Serve the live webcam feed as a multipart MJPEG stream.
 
@@ -24,6 +27,6 @@ async def video_stream(request: Request) -> StreamingResponse:
     """
     face_service = request.app.state.face_service
     return StreamingResponse(
-        face_service.generate_frames(),
+        face_service.generate_frames(mode=mode),
         media_type="multipart/x-mixed-replace; boundary=frame",
     )

@@ -9,8 +9,8 @@ Responsibilities
 • Load MediaPipe FaceLandmarker once at startup
 • Run CLAHE → landmark detection → feature extraction → prediction
   (identical preprocessing to src/collect.py + src/extract.py)
-• Maintain a 15-frame rolling prediction buffer for temporal smoothing
-• Write attendance via attendance_service when a confident match fires
+• Maintain a rolling prediction buffer for temporal smoothing
+• Write recognition events + attendance records when a confident match fires
 • Yield JPEG-encoded frames for the MJPEG streaming endpoint
 ─────────────────────────────────────────────────────────────
 """
@@ -33,6 +33,7 @@ from tensorflow.keras.models import load_model as keras_load_model
 from services.attendance_service import write_record
 from utils.drawing import draw_face_box, draw_landmarks
 from utils.features import extract_features
+from utils.liveness import LandmarkLivenessTracker
 
 logger = logging.getLogger(__name__)
 
@@ -45,12 +46,16 @@ TASK_FILE   = os.path.join(BASE_DIR, "models", "face_landmarker.task")
 
 # ── Tunable inference constants ──────────────────────────────
 CONFIDENCE_THRESHOLD = float(os.getenv("CONFIDENCE_THRESHOLD", "0.92"))
-# Keep timeline clean: never allow duplicate logs for the same person within 2 minutes.
-RECOGNITION_COOLDOWN = max(int(os.getenv("RECOGNITION_COOLDOWN", "120")), 120)
-BUFFER_SIZE          = int(os.getenv("BUFFER_SIZE", "15"))           # frames
+# Successful attendance confirmations should cool down briefly, but failed liveness
+# checks should be retryable almost immediately so the kiosk feels responsive.
+EVENT_EMIT_DEBOUNCE_SECONDS = max(float(os.getenv("EVENT_EMIT_DEBOUNCE_SECONDS", "1")), 0.5)
+REJECTED_EVENT_RETRY_SECONDS = max(float(os.getenv("REJECTED_EVENT_RETRY_SECONDS", "0.75")), 0.1)
+MAX_LIVENESS_FAILURES = max(int(os.getenv("MAX_LIVENESS_FAILURES", "3")), 1)
+BUFFER_SIZE          = int(os.getenv("BUFFER_SIZE", "4"))            # frames
 WEBCAM_INDEX         = int(os.getenv("WEBCAM_INDEX", "0"))
 FRAME_WIDTH          = int(os.getenv("FRAME_WIDTH", "1280"))
 FRAME_HEIGHT         = int(os.getenv("FRAME_HEIGHT", "720"))
+LIVENESS_REQUIRED = os.getenv("LIVENESS_REQUIRED", "true").strip().lower() not in {"0", "false", "no"}
 
 
 class FaceService:
@@ -64,11 +69,28 @@ class FaceService:
     def __init__(self) -> None:
         self._model_ready = False
         self._cap: Optional[cv2.VideoCapture] = None
+        self._detector = None
+        self._keras_model = None
+        self._label_encoder = None
+        self._scaler = None
 
         # Inference state
         self._pred_buffer: deque = deque(maxlen=BUFFER_SIZE)
-        self._last_logged: dict  = {}     # name → timestamp of last log write
+        self._last_success_emitted: dict = {}  # name → timestamp of last accepted attendance confirmation
+        self._last_rejected_emitted: dict = {}  # name → (timestamp, rejection status)
+        self._liveness_fail_counts: dict = {}  # name → consecutive liveness failures before hard retry state
         self._latest_frame: Optional[bytes] = None  # last JPEG for MJPEG stream
+        self._liveness_tracker = LandmarkLivenessTracker()
+        self._public_status = {
+            "state": "idle",
+            "message": "Choose Check In or Check Out, then look at the camera.",
+            "level": "info",
+            "mode": None,
+            "name": None,
+            "liveness_score": 0.0,
+            "liveness_passed": False,
+            "updated_at": datetime.now().isoformat(timespec="seconds"),
+        }
 
         # Load ML artefacts
         self._load_models()
@@ -128,6 +150,32 @@ class FaceService:
             return []
         return [c.replace("_", " ") for c in self._label_encoder.classes_]
 
+    @property
+    def public_status(self) -> dict:
+        return dict(self._public_status)
+
+    def _set_public_status(
+        self,
+        *,
+        state: str,
+        message: str,
+        level: str = "info",
+        mode: str | None = None,
+        name: str | None = None,
+        liveness_score: float | None = None,
+        liveness_passed: bool | None = None,
+    ) -> None:
+        self._public_status = {
+            "state": state,
+            "message": message,
+            "level": level,
+            "mode": mode,
+            "name": name,
+            "liveness_score": float(liveness_score or 0.0),
+            "liveness_passed": bool(liveness_passed),
+            "updated_at": datetime.now().isoformat(timespec="seconds"),
+        }
+
     # ── Webcam lifecycle ──────────────────────────────────────
     def open_camera(self) -> bool:
         """Open the webcam. Returns True on success."""
@@ -149,18 +197,29 @@ class FaceService:
     def close(self) -> None:
         """Release all resources — called at app shutdown."""
         self.close_camera()
+        self._liveness_tracker.reset()
         if self._model_ready:
             self._detector.close()
         logger.info("FaceService shut down.")
 
     # ── Single-frame inference ────────────────────────────────
-    def _process_frame(self, frame: np.ndarray) -> np.ndarray:
+    def _process_frame(self, frame: np.ndarray, mode: str = "check-in") -> np.ndarray:
         """
         Apply CLAHE → MediaPipe → Keras prediction → draw overlay.
-        Writes attendance CSV when a confident, cooled-down match fires.
+        Writes recognition event + attendance record on confident match.
         Returns the annotated BGR frame.
         """
         frame = cv2.flip(frame, 1)
+
+        if not self._model_ready or self._detector is None:
+            self._set_public_status(
+                state="model_not_ready",
+                message="Face model is not ready. Train and reload the backend first.",
+                level="warn",
+                mode=mode,
+            )
+            self._draw_top_bar(frame)
+            return frame
 
         # CLAHE low-light enhancement (must match collect.py exactly)
         lab        = cv2.cvtColor(frame, cv2.COLOR_BGR2LAB)
@@ -178,6 +237,7 @@ class FaceService:
             face_lm = result.face_landmarks[0]
             matrix  = (result.facial_transformation_matrixes[0]
                        if result.facial_transformation_matrixes else None)
+            liveness = self._liveness_tracker.update(face_lm)
 
             pts = draw_landmarks(enhanced, face_lm)
 
@@ -197,53 +257,240 @@ class FaceService:
             if confidence >= CONFIDENCE_THRESHOLD:
                 raw_name   = self._label_encoder.classes_[label_id]
                 name_label = raw_name.replace("_", " ")
-                box_color  = (0, 255, 80)
+                box_color  = (0, 255, 80) if (not LIVENESS_REQUIRED or liveness.passed) else (0, 200, 255)
 
-                # Write log at most once per RECOGNITION_COOLDOWN seconds
+                # Debounce repeated frame-level detections before creating a new event.
                 now = time.time()
-                if (raw_name not in self._last_logged or
-                        now - self._last_logged[raw_name] >= RECOGNITION_COOLDOWN):
+                last_success_at = self._last_success_emitted.get(raw_name)
+                recent_rejection = self._last_rejected_emitted.get(raw_name)
+                rejection_blocks_retry = False
+                if recent_rejection is not None:
+                    rejected_at, rejected_status = recent_rejection
+                    rejection_blocks_retry = (
+                        now - rejected_at < REJECTED_EVENT_RETRY_SECONDS
+                        and (rejected_status != "Liveness Failed" or not liveness.passed)
+                    )
+
+                if (
+                    (last_success_at is None or now - last_success_at >= EVENT_EMIT_DEBOUNCE_SECONDS)
+                    and not rejection_blocks_retry
+                ):
                     try:
-                        write_record(raw_name)
-                        self._last_logged[raw_name] = now
-                        logger.info(
-                            "Attendance logged: %s  conf=%.2f",
-                            name_label, confidence,
+                        if LIVENESS_REQUIRED and not liveness.passed:
+                            fail_count = self._liveness_fail_counts.get(raw_name, 0) + 1
+                            self._liveness_fail_counts[raw_name] = fail_count
+
+                            if fail_count < MAX_LIVENESS_FAILURES:
+                                self._set_public_status(
+                                    state="awaiting_liveness",
+                                    message=(
+                                        f"Liveness check {fail_count}/{MAX_LIVENESS_FAILURES}. "
+                                        "Blink once or turn your head slightly."
+                                    ),
+                                    level="info",
+                                    mode=mode,
+                                    name=name_label,
+                                    liveness_score=liveness.score,
+                                    liveness_passed=False,
+                                )
+                            else:
+                                record = write_record(
+                                    raw_name,
+                                    event_mode=mode,
+                                    confidence=confidence,
+                                    liveness_score=liveness.score,
+                                    liveness_passed=False,
+                                    liveness_message=liveness.message,
+                                    source_id=f"camera:{WEBCAM_INDEX}",
+                                )
+                                self._last_rejected_emitted[raw_name] = (now, record.status)
+                                self._liveness_fail_counts[raw_name] = 0
+                                self._set_public_status(
+                                    state="liveness_failed",
+                                    message="Liveness failed 3 times. Please retry and look directly at the camera.",
+                                    level="warn",
+                                    mode=mode,
+                                    name=name_label,
+                                    liveness_score=liveness.score,
+                                    liveness_passed=False,
+                                )
+                                logger.warning(
+                                    "Recognition blocked by liveness after retries: %s  mode=%s  score=%.2f",
+                                    name_label,
+                                    mode,
+                                    liveness.score,
+                                )
+                            draw_face_box(enhanced, pts, name_label, confidence, box_color)
+                            self._draw_liveness_overlay(enhanced, liveness)
+                            self._draw_confidence_bar(enhanced, confidence)
+                            self._draw_top_bar(enhanced)
+                            return enhanced
+
+                        record = write_record(
+                            raw_name,
+                            event_mode=mode,
+                            confidence=confidence,
+                            liveness_score=liveness.score,
+                            liveness_passed=(liveness.passed if LIVENESS_REQUIRED else True),
+                            liveness_message=liveness.message,
+                            source_id=f"camera:{WEBCAM_INDEX}",
                         )
+                        self._liveness_fail_counts[raw_name] = 0
+                        if record.status == "Liveness Failed":
+                            self._last_rejected_emitted[raw_name] = (now, record.status)
+                            self._set_public_status(
+                                state="liveness_failed",
+                                message="Attendance blocked: liveness was not confirmed. Please blink or turn your head slightly.",
+                                level="warn",
+                                mode=mode,
+                                name=name_label,
+                                liveness_score=liveness.score,
+                                liveness_passed=False,
+                            )
+                            logger.warning(
+                                "Recognition blocked by liveness: %s  mode=%s  score=%.2f",
+                                name_label,
+                                mode,
+                                liveness.score,
+                            )
+                        elif record.status in {"Unrecognized", "Duplicate Ignored", "Outside Shift Window", "Rejected Event"}:
+                            self._last_rejected_emitted[raw_name] = (now, record.status)
+                            if record.status == "Unrecognized":
+                                message = (
+                                    f"{name_label} was recognized, but no employee record is registered yet."
+                                )
+                            else:
+                                message = (
+                                    f"Recognition captured for {name_label}, but attendance was not accepted: {record.status}."
+                                )
+                            self._set_public_status(
+                                state="business_rejected",
+                                message=message,
+                                level="warn",
+                                mode=mode,
+                                name=name_label,
+                                liveness_score=liveness.score,
+                                liveness_passed=liveness.passed,
+                            )
+                            logger.warning(
+                                "Recognition event did not create attendance: %s  mode=%s  status=%s  conf=%.2f",
+                                name_label,
+                                mode,
+                                record.status,
+                                confidence,
+                            )
+                        else:
+                            self._last_success_emitted[raw_name] = now
+                            self._last_rejected_emitted.pop(raw_name, None)
+                            self._liveness_fail_counts[raw_name] = 0
+                            self._set_public_status(
+                                state="attendance_confirmed",
+                                message=f"{record.status} recorded for {name_label}.",
+                                level="ok",
+                                mode=mode,
+                                name=name_label,
+                                liveness_score=liveness.score,
+                                liveness_passed=liveness.passed,
+                            )
+                            logger.info(
+                                "Attendance logged: %s  mode=%s  conf=%.2f  liveness=%.2f",
+                                name_label,
+                                mode,
+                                confidence,
+                                liveness.score,
+                            )
                     except Exception as exc:
                         logger.error("Log write failed: %s", exc)
+                else:
+                    if LIVENESS_REQUIRED and not liveness.passed:
+                        self._set_public_status(
+                            state="awaiting_liveness",
+                            message=liveness.message,
+                            level="info",
+                            mode=mode,
+                            name=name_label,
+                            liveness_score=liveness.score,
+                            liveness_passed=False,
+                        )
+                    else:
+                        self._set_public_status(
+                            state="ready_to_confirm",
+                            message=f"Recognition stable for {name_label}. Waiting for capture window.",
+                            level="info",
+                            mode=mode,
+                            name=name_label,
+                            liveness_score=liveness.score,
+                            liveness_passed=liveness.passed,
+                        )
             else:
                 name_label = "Unknown"
                 box_color  = (0, 80, 255)
                 self._pred_buffer.clear()   # reset on unknown
+                self._liveness_fail_counts.clear()
+                self._set_public_status(
+                    state="awaiting_recognition",
+                    message="Face detected. Please face the camera, then blink or turn your head slightly.",
+                    level="info",
+                    mode=mode,
+                    liveness_score=liveness.score,
+                    liveness_passed=liveness.passed,
+                )
 
             draw_face_box(enhanced, pts, name_label, confidence, box_color)
+            self._draw_liveness_overlay(enhanced, liveness)
 
             # HUD — confidence bar
             self._draw_confidence_bar(enhanced, confidence)
         else:
             self._pred_buffer.clear()      # reset when face leaves frame
+            self._liveness_tracker.reset()
+            self._liveness_fail_counts.clear()
+            self._set_public_status(
+                state="waiting_for_face",
+                message="Waiting for face. Stand in front of the camera, then blink or turn your head slightly.",
+                level="info",
+                mode=mode,
+            )
 
         self._draw_top_bar(enhanced)
         return enhanced
 
     # ── MJPEG frame generator ─────────────────────────────────
-    def generate_frames(self) -> Generator[bytes, None, None]:
+    def generate_frames(self, mode: str = "check-in") -> Generator[bytes, None, None]:
         """
         Yield multipart MJPEG frames for StreamingResponse.
         Opens the webcam on first call; releases on generator exit.
         """
         if not self.open_camera():
+            self._set_public_status(
+                state="camera_unavailable",
+                message="Camera could not be opened. Check the webcam device and try again.",
+                level="warn",
+                mode=mode,
+            )
             return
+
+        self._set_public_status(
+            state="stream_started",
+            message="Camera started. Look at the camera, then blink or turn your head slightly.",
+            level="info",
+            mode=mode,
+        )
 
         try:
             while True:
                 ret, frame = self._cap.read()
                 if not ret:
                     logger.warning("Webcam read failed — stopping stream.")
+                    self._set_public_status(
+                        state="camera_read_failed",
+                        message="Camera read failed. Restart the scan if needed.",
+                        level="warn",
+                        mode=mode,
+                    )
                     break
 
-                annotated = self._process_frame(frame)
+                annotated = self._process_frame(frame, mode=mode)
                 ok, jpeg  = cv2.imencode(".jpg", annotated, [cv2.IMWRITE_JPEG_QUALITY, 80])
                 if not ok:
                     continue
@@ -277,3 +524,39 @@ class FaceService:
         color = (0, 200, 80) if confidence >= CONFIDENCE_THRESHOLD else (0, 80, 200)
         cv2.rectangle(frame, (0, h - 6), (bar_w, h), color, -1)
         cv2.rectangle(frame, (0, h - 6), (w, h), (40, 40, 40), 1)
+
+    def _draw_liveness_overlay(self, frame: np.ndarray, liveness) -> None:
+        h, _ = frame.shape[:2]
+        panel_color = (0, 150, 80) if liveness.passed else (0, 150, 220)
+        cv2.rectangle(frame, (14, h - 100), (380, h - 18), (18, 18, 24), -1)
+        cv2.rectangle(frame, (14, h - 100), (380, h - 18), panel_color, 1)
+        cv2.putText(
+            frame,
+            f"Liveness: {liveness.score * 100:.0f}% {'PASS' if liveness.passed else 'CHECK'}",
+            (28, h - 72),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.56,
+            panel_color,
+            2,
+            cv2.LINE_AA,
+        )
+        cv2.putText(
+            frame,
+            f"Blink: {'yes' if liveness.blink_detected else 'no'}  Head move: {'yes' if liveness.head_movement_detected else 'no'}",
+            (28, h - 46),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.46,
+            (210, 210, 210),
+            1,
+            cv2.LINE_AA,
+        )
+        cv2.putText(
+            frame,
+            liveness.message[:52],
+            (28, h - 24),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.44,
+            (160, 160, 160),
+            1,
+            cv2.LINE_AA,
+        )

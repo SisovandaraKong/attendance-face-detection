@@ -51,3 +51,14 @@ async def api_public_recent() -> APIResponse:
         },
         message="Latest recognitions",
     )
+
+
+@router.get("/api/public/status", response_model=APIResponse)
+async def api_public_status(request: Request) -> APIResponse:
+    """Return the latest kiosk recognition/liveness status for the public page."""
+    face_service = request.app.state.face_service
+    return APIResponse(
+        success=True,
+        data=face_service.public_status,
+        message="Latest kiosk status",
+    )

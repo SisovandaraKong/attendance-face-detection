@@ -3,69 +3,182 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Face Detection</title>
+  <title>Bank Staff Attendance Kiosk</title>
   <link rel="stylesheet" href="/static/css/public.css" />
 </head>
 <body>
-  <main class="shell">
-    <section class="hero">
-      <div>
-        <p class="eyebrow">PUBLIC CHECK-IN</p>
-        <h1>Face Attendance Checkpoint</h1>
-        <p class="subtitle">Choose Check In or Check Out first, then stand in front of the camera for face recognition.</p>
+  <main class="kiosk-shell">
+    <section class="kiosk-hero">
+      <div class="brand-block">
+        <p class="eyebrow">BANK STAFF ATTENDANCE</p>
+        <h1>Attendance Scan Kiosk</h1>
+        <p class="subtitle">
+          Stand in front of the camera, align your face inside the guide, and wait for confirmation.
+        </p>
+        <div class="brand-strip">
+          <div class="brand-mark" aria-hidden="true">B</div>
+          <div>
+            <strong>Bank Operations Checkpoint</strong>
+            <p>FastAI + Face Recognition Attendance</p>
+          </div>
+        </div>
       </div>
-      <div class="status-wrap">
-        {% if model_ready %}
-          <span class="status ok">Model ready</span>
-        {% else %}
-          <span class="status warn">Model not loaded (train model first)</span>
-        {% endif %}
-        <span class="count">Today: <strong id="today-count">{{ today_count }}</strong></span>
+
+      <div class="hero-panel">
+        <div class="clock-card">
+          <p class="panel-label">Live Date</p>
+          <strong id="live-date">--</strong>
+          <p class="panel-label top-gap">Live Time</p>
+          <strong id="live-time">--:--:--</strong>
+        </div>
+        <div class="hero-status">
+          {% if model_ready %}
+            <span class="status-pill ok">Recognition service ready</span>
+          {% else %}
+            <span class="status-pill warn">Recognition model unavailable</span>
+          {% endif %}
+          <span class="count-pill">Today: <strong id="today-count">{{ today_count }}</strong></span>
+        </div>
       </div>
     </section>
 
-    <section class="action-card" id="mode-picker">
-      <p class="action-step">Step 1</p>
-      <h2>Choose Attendance Action</h2>
-      <p class="action-copy">Face detection will start only after you choose one action.</p>
+    <section class="mode-panel" id="mode-picker">
+      <div>
+        <p class="action-step">Attendance Action</p>
+        <h2>Select Check In or Check Out</h2>
+        <p class="action-copy">
+          The kiosk stays in the selected mode and automatically becomes ready for the next employee after each result.
+        </p>
+      </div>
       <div class="action-buttons">
         <button type="button" class="action-btn check-in" data-mode="check-in">Check In</button>
         <button type="button" class="action-btn check-out" data-mode="check-out">Check Out</button>
       </div>
     </section>
 
-    <section class="content-grid detection-hidden" id="detection-area">
+    <section class="kiosk-grid detection-hidden" id="detection-area">
       <article class="camera-card">
         <div class="card-head">
-          <h2>Live Detection Feed</h2>
+          <div>
+            <p class="panel-label">Live Camera</p>
+            <h2>Face Scan</h2>
+          </div>
           <span id="mode-chip" class="mode-chip"></span>
         </div>
 
         <div class="feed-shell">
           {% if model_ready %}
-            <div id="feed-idle" class="feed-idle">Click Check In or Check Out to start camera.</div>
+            <div id="feed-idle" class="feed-idle">
+              Select a mode to begin attendance scanning.
+            </div>
             <img id="webcam-feed" class="feed-image-hidden" data-stream-url="/stream" alt="Live face detection stream" />
-          {% else %}
-            <div class="placeholder">Train the model, then restart server.</div>
-          {% endif %}
-        </div>
-      </article>
-
-      <aside class="recent-card">
-        <h2>Recent Recognitions</h2>
-        <div id="recent-list" class="recent-list">
-          {% for record in today_records | reverse %}
-            <div class="row">
-              <div class="avatar">{{ record.name[0] | upper }}</div>
-              <div class="meta">
-                <p class="name">{{ record.name }}</p>
-                <p class="time">{{ record.time }}</p>
+            <div class="alignment-guide" aria-hidden="true">
+              <div class="guide-ring">
+                <span class="guide-eye left"></span>
+                <span class="guide-eye right"></span>
+                <span class="guide-mouth"></span>
               </div>
             </div>
           {% else %}
-            <p class="empty">No records yet today.</p>
-          {% endfor %}
+            <div class="placeholder">Train the recognition model, then restart the service.</div>
+          {% endif %}
         </div>
+
+        <div id="status-banner" class="status-banner neutral">
+          <div class="status-copy">
+            <p class="panel-label" id="status-state-label">Ready</p>
+            <h3 id="status-state-title">Waiting to start scan</h3>
+            <p id="scan-status-message" class="status-message">
+              Choose a mode, then face the camera and follow the instructions on screen.
+            </p>
+          </div>
+          <div class="status-meta">
+            <div>
+              <span class="meta-label">Current State</span>
+              <strong id="status-state-code">IDLE</strong>
+            </div>
+            <div>
+              <span class="meta-label">Kiosk Guidance</span>
+              <strong id="status-short-hint">Align face in guide</strong>
+            </div>
+          </div>
+        </div>
+
+        <div class="guide-steps">
+          <div class="guide-step">
+            <strong>1</strong>
+            <span>Align your face inside the guide.</span>
+          </div>
+          <div class="guide-step">
+            <strong>2</strong>
+            <span>Look at the camera and hold still.</span>
+          </div>
+          <div class="guide-step">
+            <strong>3</strong>
+            <span>Blink or move your head slightly for liveness.</span>
+          </div>
+        </div>
+      </article>
+
+      <aside class="sidebar-stack">
+        <section class="side-card">
+          <p class="panel-label">Realtime Scan State</p>
+          <div class="state-list">
+            <div class="state-row" data-visual-state="no-face">
+              <span class="state-dot"></span>
+              <span>No face detected</span>
+            </div>
+            <div class="state-row" data-visual-state="align-face">
+              <span class="state-dot"></span>
+              <span>Align face</span>
+            </div>
+            <div class="state-row" data-visual-state="verifying">
+              <span class="state-dot"></span>
+              <span>Verifying</span>
+            </div>
+            <div class="state-row" data-visual-state="liveness">
+              <span class="state-dot"></span>
+              <span>Liveness check</span>
+            </div>
+            <div class="state-row" data-visual-state="success">
+              <span class="state-dot"></span>
+              <span>Success</span>
+            </div>
+            <div class="state-row" data-visual-state="failed">
+              <span class="state-dot"></span>
+              <span>Failed / retry</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="side-card">
+          <p class="panel-label">Privacy Notice</p>
+          <p class="privacy-copy">
+            This kiosk is used only for bank staff attendance verification. Recent successful scans are shown briefly for operational visibility.
+          </p>
+        </section>
+
+        <section class="side-card recent-card">
+          <div class="card-head compact">
+            <div>
+              <p class="panel-label">Recent Activity</p>
+              <h2>Today&apos;s Recognitions</h2>
+            </div>
+          </div>
+          <div id="recent-list" class="recent-list">
+            {% for record in today_records | reverse %}
+              <div class="row">
+                <div class="avatar">{{ record.name[0] | upper }}</div>
+                <div class="meta">
+                  <p class="name">{{ record.name }}</p>
+                  <p class="time">{{ record.time }}</p>
+                </div>
+              </div>
+            {% else %}
+              <p class="empty">No records yet today.</p>
+            {% endfor %}
+          </div>
+        </section>
       </aside>
     </section>
   </main>

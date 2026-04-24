@@ -19,7 +19,19 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from routes import attendance, dashboard, persons, public, stream
+from database.session import init_db
+from routes import (
+    attendance,
+    auth,
+    dashboard,
+    master_data,
+    persons,
+    public,
+    recognition_events,
+    reports,
+    stream,
+    system,
+)
 from services.face_service import FaceService
 
 # ── Load .env before anything reads os.getenv ───────────────
@@ -37,6 +49,9 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # ── Lifespan — load heavy resources once, release on shutdown ─
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    logger.info("Starting up — initializing relational database schema…")
+    init_db()
+
     logger.info("Starting up — loading FaceService…")
     app.state.face_service = FaceService()
     if app.state.face_service.is_ready:
@@ -82,3 +97,8 @@ app.include_router(stream.router)
 app.include_router(dashboard.router)
 app.include_router(attendance.router)
 app.include_router(persons.router)
+app.include_router(recognition_events.router)
+app.include_router(reports.router)
+app.include_router(auth.router)
+app.include_router(master_data.router)
+app.include_router(system.router)
