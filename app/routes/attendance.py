@@ -10,7 +10,7 @@ from app.services import attendance_service
 from app.routes._errors import run_service
 
 
-router = APIRouter(prefix="/attendance", tags=["attendance"])
+router = APIRouter(prefix="/api/attendance", tags=["attendance"])
 
 
 @router.post("/clock-in")

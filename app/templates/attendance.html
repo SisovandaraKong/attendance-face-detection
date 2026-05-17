@@ -1,0 +1,606 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Face Attendance — Clock In / Clock Out</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0f172a;
+      --surface: #1e293b;
+      --surface-light: #334155;
+      --text: #f1f5f9;
+      --muted: #94a3b8;
+      --accent: #2dd4bf;
+      --accent-dim: rgba(45, 212, 191, 0.15);
+      --success: #22c55e;
+      --success-bg: rgba(34, 197, 94, 0.12);
+      --danger: #ef4444;
+      --warning: #fbbf24;
+      --radius: 16px;
+      --radius-sm: 10px;
+    }
+
+    * { box-sizing: border-box; margin: 0; }
+
+    body {
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--text);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 20px;
+    }
+
+    .page {
+      width: 100%;
+      max-width: 720px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    /* ── Header ── */
+    .header {
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 0;
+    }
+
+    .header-logo {
+      width: 48px; height: 48px;
+      border-radius: 14px;
+      background: linear-gradient(135deg, #2dd4bf 0%, #0ea5e9 100%);
+      display: grid; place-items: center;
+      font-weight: 800; font-size: 20px; color: #0f172a;
+    }
+
+    .header h1 {
+      font-size: 22px; font-weight: 800;
+      background: linear-gradient(135deg, #f1f5f9, #2dd4bf);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .live-time {
+      font-size: 42px; font-weight: 700; letter-spacing: -1px;
+      color: var(--accent); font-variant-numeric: tabular-nums;
+      line-height: 1.1;
+    }
+
+    .live-date {
+      color: var(--muted); font-size: 14px;
+    }
+
+    /* ── Camera card ── */
+    .camera-card {
+      background: var(--surface);
+      border: 1px solid var(--surface-light);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+
+    .camera-frame {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 4 / 3;
+      background: #000;
+      overflow: hidden;
+    }
+
+    .camera-frame video {
+      width: 100%; height: 100%;
+      object-fit: cover;
+      transform: scaleX(-1);
+    }
+
+    .camera-placeholder {
+      position: absolute; inset: 0;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: 12px; color: var(--muted); font-size: 15px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    .camera-placeholder:hover {
+      background: rgba(45, 212, 191, 0.05);
+    }
+
+    .camera-placeholder svg {
+      width: 64px; height: 64px; opacity: 0.35;
+    }
+
+    .camera-placeholder span {
+      font-size: 13px; color: #64748b;
+    }
+
+    /* ── Face guide overlay ── */
+    .face-guide {
+      position: absolute; inset: 0;
+      pointer-events: none;
+      display: none;
+    }
+
+    .face-guide.active { display: block; }
+
+    .face-guide-mask {
+      position: absolute; inset: 0;
+      background: rgba(15, 23, 42, 0.5);
+      -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 400'%3E%3Crect width='400' height='400' fill='white'/%3E%3Cpath d='M200 40 C140 40 95 80 90 140 L88 170 C82 185 78 200 80 218 C82 232 90 242 100 248 C105 268 115 285 130 298 C145 310 165 318 185 322 L185 340 C150 348 120 358 100 368 L300 368 C280 358 250 348 215 340 L215 322 C235 318 255 310 270 298 C285 285 295 268 300 248 C310 242 318 232 320 218 C322 200 318 185 312 170 L310 140 C305 80 260 40 200 40Z' fill='black'/%3E%3C/svg%3E");
+      mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 400'%3E%3Crect width='400' height='400' fill='white'/%3E%3Cpath d='M200 40 C140 40 95 80 90 140 L88 170 C82 185 78 200 80 218 C82 232 90 242 100 248 C105 268 115 285 130 298 C145 310 165 318 185 322 L185 340 C150 348 120 358 100 368 L300 368 C280 358 250 348 215 340 L215 322 C235 318 255 310 270 298 C285 285 295 268 300 248 C310 242 318 232 320 218 C322 200 318 185 312 170 L310 140 C305 80 260 40 200 40Z' fill='black'/%3E%3C/svg%3E");
+      -webkit-mask-size: 55% 80%;
+      mask-size: 55% 80%;
+      -webkit-mask-position: center 35%;
+      mask-position: center 35%;
+      -webkit-mask-repeat: no-repeat;
+      mask-repeat: no-repeat;
+    }
+
+    .face-guide-outline {
+      position: absolute;
+      left: 50%; top: 35%;
+      width: 55%; height: 80%;
+      transform: translate(-50%, -50%) scale(1);
+      animation: pulse-guide 2.5s ease-in-out infinite;
+    }
+
+    .face-guide-outline svg {
+      width: 100%; height: 100%;
+      filter: drop-shadow(0 0 12px rgba(45, 212, 191, 0.2));
+    }
+
+    .face-guide-label {
+      position: absolute;
+      bottom: 12px; left: 50%;
+      transform: translateX(-50%);
+      background: rgba(15, 23, 42, 0.7);
+      backdrop-filter: blur(8px);
+      color: var(--accent);
+      font-size: 12px; font-weight: 700;
+      padding: 6px 16px;
+      border-radius: 20px;
+      letter-spacing: 0.5px;
+    }
+
+    @keyframes pulse-guide {
+      0%, 100% { opacity: 0.7; filter: drop-shadow(0 0 8px rgba(45, 212, 191, 0.1)); }
+      50% { opacity: 1; filter: drop-shadow(0 0 20px rgba(45, 212, 191, 0.25)); }
+    }
+
+    /* ── Buttons ── */
+    .actions {
+      display: flex; gap: 10px;
+      padding: 16px;
+    }
+
+    .btn {
+      flex: 1;
+      min-height: 54px;
+      border: none;
+      border-radius: var(--radius-sm);
+      font: inherit; font-weight: 800; font-size: 16px;
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center; gap: 8px;
+      transition: all 0.2s ease;
+      letter-spacing: 0.3px;
+    }
+
+    .btn:disabled { opacity: 0.35; cursor: not-allowed; transform: none !important; }
+
+    .btn-checkin {
+      background: linear-gradient(135deg, #059669, #10b981);
+      color: #fff;
+    }
+    .btn-checkin:hover:not(:disabled) {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 24px rgba(16, 185, 129, 0.35);
+    }
+
+    .btn-checkout {
+      background: linear-gradient(135deg, #dc2626, #ef4444);
+      color: #fff;
+    }
+    .btn-checkout:hover:not(:disabled) {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 24px rgba(239, 68, 68, 0.35);
+    }
+
+    .btn-loading {
+      position: relative;
+      pointer-events: none;
+    }
+
+    .btn-loading::after {
+      content: ""; position: absolute;
+      width: 20px; height: 20px;
+      border: 3px solid rgba(255,255,255,0.3);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Feedback ── */
+    .error-msg {
+      color: var(--danger); font-size: 13px; font-weight: 600;
+      min-height: 20px; text-align: center;
+      padding: 0 16px;
+    }
+
+    .result {
+      display: none;
+      margin: 0 16px 16px; padding: 18px;
+      border-radius: var(--radius-sm);
+      background: var(--success-bg);
+      border: 1px solid rgba(34, 197, 94, 0.25);
+      text-align: center;
+      animation: fadeIn 0.3s ease;
+    }
+
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } }
+
+    .result.visible { display: block; }
+
+    .result-icon { font-size: 32px; }
+
+    .result-name {
+      font-size: 20px; font-weight: 800;
+      color: var(--success); margin-top: 6px;
+    }
+
+    .result-detail {
+      font-size: 13px; color: var(--muted); margin-top: 4px;
+    }
+
+    .result-similarity {
+      display: inline-block; margin-top: 10px;
+      padding: 4px 14px; border-radius: 20px;
+      background: var(--accent-dim); color: var(--accent);
+      font-size: 12px; font-weight: 700;
+    }
+
+    .admin-link {
+      text-align: center; padding: 4px 0;
+    }
+
+    .admin-link a {
+      color: #475569; font-size: 12px;
+      text-decoration: none; transition: color 0.2s;
+    }
+
+    .admin-link a:hover { color: var(--accent); }
+
+    .camera-toolbar {
+      display: flex; align-items: center; gap: 10px;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--surface-light);
+    }
+
+    .camera-toolbar label {
+      color: var(--muted); font-size: 12px; font-weight: 700;
+    }
+
+    .camera-select {
+      flex: 1;
+      min-height: 36px;
+      background: var(--surface-light);
+      color: var(--text);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: var(--radius-sm);
+      padding: 0 10px;
+      font: inherit; font-size: 13px;
+      cursor: pointer;
+    }
+
+    .camera-select:focus {
+      outline: 2px solid var(--accent);
+      outline-offset: 1px;
+    }
+
+    canvas { display: none; }
+
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="header">
+      <div class="header-logo" aria-hidden="true">A</div>
+      <h1>Face Attendance</h1>
+      <div class="live-time" id="live-time">--:--:--</div>
+      <div class="live-date" id="live-date"></div>
+    </div>
+
+    <div class="camera-card">
+      <div class="camera-toolbar">
+        <label for="camera-select">📷 Camera</label>
+        <select class="camera-select" id="camera-select">
+          <option value="">Loading cameras…</option>
+        </select>
+      </div>
+      <div class="camera-frame" id="camera-frame">
+        <video id="video" class="hidden" autoplay muted playsinline></video>
+        <div class="face-guide" id="face-guide">
+          <div class="face-guide-mask"></div>
+          <div class="face-guide-outline">
+            <svg viewBox="0 0 400 400" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M200 40 C140 40 95 80 90 140 L88 170 C82 185 78 200 80 218 C82 232 90 242 100 248 C105 268 115 285 130 298 C145 310 165 318 185 322 L185 340 C150 348 120 358 100 368 L300 368 C280 358 250 348 215 340 L215 322 C235 318 255 310 270 298 C285 285 295 268 300 248 C310 242 318 232 320 218 C322 200 318 185 312 170 L310 140 C305 80 260 40 200 40Z"
+                stroke="#2dd4bf" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </div>
+          <span class="face-guide-label">Position your face in the outline</span>
+        </div>
+        <div class="camera-placeholder" id="placeholder">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M6.827 6.175A2.31 2.31 0 015.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 00-1.134-.175 2.31 2.31 0 01-1.64-1.055l-.822-1.316a2.192 2.192 0 00-1.736-1.039 48.774 48.774 0 00-5.232 0 2.192 2.192 0 00-1.736 1.039l-.821 1.316z"/>
+            <path d="M16.5 12.75a4.5 4.5 0 11-9 0 4.5 4.5 0 019 0z"/>
+          </svg>
+          Tap here to start camera
+          <span>Face scan required for attendance</span>
+        </div>
+      </div>
+
+      <div class="actions">
+        <button class="btn btn-checkin" id="checkin-btn" type="button">✅ Check In</button>
+        <button class="btn btn-checkout" id="checkout-btn" type="button">🚪 Check Out</button>
+      </div>
+
+      <p class="error-msg" id="error-msg" role="alert"></p>
+
+      <div class="result" id="result" role="status" aria-live="polite">
+        <div class="result-icon" id="result-icon">✅</div>
+        <div class="result-name" id="result-name"></div>
+        <div class="result-detail" id="result-detail"></div>
+        <span class="result-similarity" id="result-similarity"></span>
+      </div>
+    </div>
+
+    <canvas id="canvas"></canvas>
+
+    <div class="admin-link">
+      <a href="/dashboard">Admin Dashboard →</a>
+    </div>
+  </div>
+
+  <script>
+  (() => {
+    "use strict";
+
+    const $ = (id) => document.getElementById(id);
+    const video = $("video");
+    const canvas = $("canvas");
+    const placeholder = $("placeholder");
+    const faceGuide = $("face-guide");
+    const cameraSelect = $("camera-select");
+    const checkinBtn = $("checkin-btn");
+    const checkoutBtn = $("checkout-btn");
+    const errorMsg = $("error-msg");
+    const resultBox = $("result");
+
+    let stream = null;
+    let submitting = false;
+    let selectedDeviceId = null;
+
+    // ── Live clock ──
+    function tickClock() {
+      const now = new Date();
+      $("live-time").textContent = now.toLocaleTimeString([], {
+        hour: "2-digit", minute: "2-digit", second: "2-digit",
+      });
+      $("live-date").textContent = now.toLocaleDateString([], {
+        weekday: "long", year: "numeric", month: "long", day: "numeric",
+      });
+    }
+    tickClock();
+    setInterval(tickClock, 1000);
+
+    // ── Enumerate cameras ──
+    async function loadCameraList() {
+      try {
+        // Need a temporary stream to get device labels (browsers require permission first)
+        const tempStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+        tempStream.getTracks().forEach((t) => t.stop());
+
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const videoDevices = devices.filter((d) => d.kind === "videoinput");
+
+        cameraSelect.innerHTML = "";
+        if (videoDevices.length === 0) {
+          cameraSelect.innerHTML = '<option value="">No cameras found</option>';
+          return;
+        }
+
+        videoDevices.forEach((device, i) => {
+          const opt = document.createElement("option");
+          opt.value = device.deviceId;
+          opt.textContent = device.label || `Camera ${i + 1}`;
+          cameraSelect.appendChild(opt);
+        });
+
+        // Prefer external camera (usually not the first one) — pick last if multiple
+        if (videoDevices.length > 1) {
+          cameraSelect.value = videoDevices[videoDevices.length - 1].deviceId;
+        }
+
+        selectedDeviceId = cameraSelect.value;
+      } catch {
+        cameraSelect.innerHTML = '<option value="">Camera access denied</option>';
+      }
+    }
+
+    // ── Camera switch ──
+    cameraSelect.addEventListener("change", () => {
+      selectedDeviceId = cameraSelect.value;
+      stopCamera();
+      startCamera();
+    });
+
+    // ── Start camera ──
+    async function startCamera() {
+      if (stream) return;
+      if (!navigator.mediaDevices?.getUserMedia) {
+        showError("Camera not available in this browser.");
+        return;
+      }
+
+      const constraints = { audio: false, video: {} };
+      if (selectedDeviceId) {
+        // Use exact deviceId — this is how external webcams are selected
+        constraints.video = {
+          deviceId: { exact: selectedDeviceId },
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+        };
+      } else {
+        // Fallback: no specific device, let browser pick
+        constraints.video = {
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+        };
+      }
+
+      try {
+        stream = await navigator.mediaDevices.getUserMedia(constraints);
+        video.srcObject = stream;
+        video.classList.remove("hidden");
+        placeholder.classList.add("hidden");
+        faceGuide.classList.add("active");
+        clearError();
+      } catch (err) {
+        showError("Camera failed: " + (err.message || "Permission denied."));
+      }
+    }
+
+    function stopCamera() {
+      if (stream) {
+        stream.getTracks().forEach((t) => t.stop());
+      }
+      stream = null;
+      video.srcObject = null;
+      video.classList.add("hidden");
+      faceGuide.classList.remove("active");
+    }
+
+    // Click placeholder to start camera
+    placeholder.addEventListener("click", startCamera);
+
+    // Auto-start: load camera list then start
+    (async () => {
+      await loadCameraList();
+      await startCamera();
+    })();
+
+    // ── Capture frame from live video ──
+    function captureFrame() {
+      if (!stream) return null;
+      const w = video.videoWidth;
+      const h = video.videoHeight;
+      if (!w || !h) return null;
+
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext("2d", { willReadFrequently: true });
+      ctx.filter = "contrast(1.08) brightness(1.04)";
+      ctx.drawImage(video, 0, 0, w, h);
+      ctx.filter = "none";
+
+      return new Promise((resolve) => {
+        canvas.toBlob((blob) => {
+          if (!blob) { resolve(null); return; }
+          resolve(new File([blob], "face.jpg", { type: "image/jpeg" }));
+        }, "image/jpeg", 0.95);
+      });
+    }
+
+    // ── Submit attendance ──
+    async function submitAttendance(action) {
+      if (submitting) return;
+
+      clearError();
+      hideResult();
+
+      // Start camera if not running
+      if (!stream) {
+        await startCamera();
+        if (!stream) return;
+        await new Promise((r) => setTimeout(r, 500));
+      }
+
+      const face = await captureFrame();
+      if (!face) {
+        showError("Could not capture face. Make sure camera is active.");
+        return;
+      }
+
+      submitting = true;
+      const btn = action === "clock-in" ? checkinBtn : checkoutBtn;
+      btn.classList.add("btn-loading");
+      btn.textContent = "";
+      checkinBtn.disabled = true;
+      checkoutBtn.disabled = true;
+
+      const fd = new FormData();
+      fd.append("face_image", face, "face.jpg");
+
+      try {
+        const res = await fetch(`/api/attendance/${action}`, { method: "POST", body: fd });
+        let data = null;
+        try { data = await res.json(); } catch {}
+        if (!res.ok || (data && data.success === false)) {
+          throw new Error(data?.detail || data?.message || `Request failed (${res.status})`);
+        }
+        showResult(data?.data, action);
+      } catch (err) {
+        showError(err.message);
+      } finally {
+        submitting = false;
+        btn.classList.remove("btn-loading");
+        checkinBtn.textContent = "✅ Check In";
+        checkoutBtn.textContent = "🚪 Check Out";
+        checkinBtn.disabled = false;
+        checkoutBtn.disabled = false;
+      }
+    }
+
+    checkinBtn.addEventListener("click", () => submitAttendance("clock-in"));
+    checkoutBtn.addEventListener("click", () => submitAttendance("clock-out"));
+
+    // ── UI helpers ──
+    function showError(msg) { errorMsg.textContent = msg; }
+    function clearError() { errorMsg.textContent = ""; }
+
+    function showResult(data, action) {
+      const isIn = action === "clock-in";
+      $("result-icon").textContent = isIn ? "✅" : "👋";
+      $("result-name").textContent = `${isIn ? "Checked In" : "Checked Out"}: ${data?.name || "Employee"}`;
+
+      const time = data?.clock_in || data?.clock_out;
+      $("result-detail").textContent = [
+        data?.status ? `Status: ${data.status}` : "",
+        time ? new Date(time).toLocaleTimeString() : "",
+        data?.work_hours ? `${data.work_hours} hours worked` : "",
+      ].filter(Boolean).join(" • ");
+
+      $("result-similarity").textContent = data?.similarity
+        ? `${Math.round(data.similarity * 100)}% match`
+        : "";
+
+      resultBox.classList.add("visible");
+      setTimeout(() => hideResult(), 8000);
+    }
+
+    function hideResult() { resultBox.classList.remove("visible"); }
+  })();
+  </script>
+</body>
+</html>

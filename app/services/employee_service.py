@@ -15,6 +15,12 @@ from app.services.errors import ConflictError, NotFoundError, ServiceError
 from app.services.face_service import FACE_STORAGE_DIR, extract_embedding, verify_face_quality
 
 
+async def inspect_face(face_image: bytes) -> dict:
+    """Return face quality status without creating or updating an employee."""
+    quality = verify_face_quality(face_image)
+    return {"success": True, "data": quality, "message": quality["message"]}
+
+
 async def create_employee(data: EmployeeCreate, face_image: bytes, db: AsyncSession) -> dict:
     """Create an employee only after face quality validation succeeds."""
     quality = verify_face_quality(face_image)

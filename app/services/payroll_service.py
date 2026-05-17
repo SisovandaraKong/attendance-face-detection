@@ -47,6 +47,12 @@ async def calculate_payroll_item(
     bonus: Decimal | int | float = Decimal("0.00"),
 ) -> PayrollItem:
     """Calculate one employee payroll item without committing it."""
+    from app.services.tax_service import (
+        calculate_income_tax,
+        calculate_nssf_employee,
+        calculate_nssf_employer,
+    )
+
     _validate_month_year(month, year)
     working_days = working_days_in_month(month, year)
     daily_rate = _money(employee.base_salary / Decimal(working_days))
@@ -63,9 +69,19 @@ async def calculate_payroll_item(
     unpaid_leave_deduction = _money(unpaid_leave_days * daily_rate)
     bonus_amount = _money(bonus)
     base_salary = _money(employee.base_salary)
-    net_pay = _money(
+
+    # Gross salary = base + overtime + bonus - attendance deductions
+    gross_salary = _money(
         base_salary + overtime_pay + bonus_amount - late_deduction - unpaid_leave_deduction
     )
+
+    # Tax & social security calculations
+    tax_amount = calculate_income_tax(gross_salary)
+    social_security_employee = calculate_nssf_employee(gross_salary)
+    social_security_employer = calculate_nssf_employer(gross_salary)
+
+    # Net pay = gross - tax - employee social security
+    net_pay = _money(gross_salary - tax_amount - social_security_employee)
 
     return PayrollItem(
         employee_id=employee.id,
@@ -75,12 +91,16 @@ async def calculate_payroll_item(
         late_deduction=late_deduction,
         unpaid_leave_deduction=unpaid_leave_deduction,
         bonus=bonus_amount,
+        gross_salary=gross_salary,
+        tax_amount=tax_amount,
+        social_security_employee=social_security_employee,
+        social_security_employer=social_security_employer,
         net_pay=net_pay,
         working_days=working_days,
         present_days=present_days,
         note=(
             f"late_count={late_count}; unpaid_leave_days={unpaid_leave_days}; "
-            f"daily_rate={daily_rate}"
+            f"daily_rate={daily_rate}; tax={tax_amount}; nssf_ee={social_security_employee}"
         ),
     )
 

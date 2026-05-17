@@ -1,2 +1,731 @@
 <!doctype html>
-<html><head><title>Payroll Dashboard</title></head><body><h1>Payroll Management System</h1></body></html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Attendance Admin</title>
+  <link rel="stylesheet" href="/static/admin.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">A</span>
+        <div>
+          <strong>Attendance</strong>
+          <span>Bank HR Console</span>
+        </div>
+      </div>
+      <nav class="nav" aria-label="Primary">
+        <button class="nav-item active" data-view="overview" type="button">Overview</button>
+        <button class="nav-item" data-view="employees" type="button">Employees</button>
+        <button class="nav-item" data-view="register" type="button">Register</button>
+        <button class="nav-item" data-view="timeclock" type="button">Time Clock</button>
+        <button class="nav-item" data-view="attendance" type="button">Attendance</button>
+        <button class="nav-item" data-view="leaves" type="button">Leaves</button>
+        <button class="nav-item" data-view="payroll" type="button">Payroll</button>
+        <button class="nav-item" data-view="analytics" type="button">Analytics</button>
+      </nav>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div>
+          <h1 id="page-title">Overview</h1>
+          <p id="page-subtitle">Operational summary for attendance, leave, and payroll.</p>
+        </div>
+        <div class="topbar-actions">
+          <span class="session-user" id="session-user">Not signed in</span>
+          <button class="button secondary hidden" id="logout-button" type="button">Sign out</button>
+        </div>
+      </header>
+
+      <section class="auth-panel" id="auth-panel" aria-labelledby="auth-title">
+        <form class="login-form" id="login-form">
+          <div>
+            <h2 id="auth-title">Sign in</h2>
+            <p>Use an admin or HR account.</p>
+          </div>
+          <label>
+            Username
+            <input id="login-username" name="username" autocomplete="username" required>
+          </label>
+          <label>
+            Password
+            <input id="login-password" name="password" type="password" autocomplete="current-password" required>
+          </label>
+          <button class="button primary" type="submit">Sign in</button>
+          <p class="form-error" id="login-error" role="alert"></p>
+        </form>
+
+        <section class="panel clock-panel" data-clock-widget="public">
+          <div class="panel-heading">
+            <div>
+              <h2>Employee Time Clock</h2>
+              <p>Daily check-in and check-out with face recognition.</p>
+            </div>
+          </div>
+          <form class="clock-form" data-clock-form="public">
+            <div class="camera-frame">
+              <video class="hidden" data-clock-video="public" autoplay muted playsinline></video>
+              <img class="hidden" data-clock-preview="public" alt="Attendance face preview">
+              <div class="face-guide" aria-hidden="true">
+                <span class="face-guide-oval"></span>
+                <span class="face-guide-line horizontal"></span>
+                <span class="face-guide-line vertical"></span>
+              </div>
+              <div class="camera-placeholder" data-clock-placeholder="public">No attendance image selected</div>
+            </div>
+            <canvas class="hidden" data-clock-canvas="public"></canvas>
+            <div class="inline-actions face-actions">
+              <button class="button secondary" data-clock-camera="public" type="button">Start camera</button>
+              <button class="button secondary" data-clock-capture="public" type="button" disabled>Capture</button>
+              <label class="button secondary file-button" for="public-clock-file">Upload</label>
+              <input id="public-clock-file" class="sr-only" data-clock-file="public" type="file" accept="image/*">
+            </div>
+            <div class="inline-actions face-actions">
+              <button class="button primary" data-clock-action="clock-in" type="submit">Check in</button>
+              <button class="button secondary" data-clock-action="clock-out" type="submit">Check out</button>
+            </div>
+            <p class="form-error" data-clock-error="public" role="alert"></p>
+            <div class="clock-result hidden" data-clock-result="public" role="status" aria-live="polite"></div>
+          </form>
+        </section>
+      </section>
+
+      <section class="workspace hidden" id="workspace">
+        <section class="view active" id="view-overview" aria-labelledby="overview-title">
+          <h2 id="overview-title" class="sr-only">Overview</h2>
+          <div class="metric-grid">
+            <article class="metric">
+              <span>Active employees</span>
+              <strong id="metric-active-employees">0</strong>
+            </article>
+            <article class="metric">
+              <span>Present today</span>
+              <strong id="metric-present-today">0</strong>
+            </article>
+            <article class="metric">
+              <span>Pending leave</span>
+              <strong id="metric-pending-leaves">0</strong>
+            </article>
+          </div>
+
+          <div class="content-grid">
+            <section class="panel">
+              <div class="panel-heading">
+                <h2>Today</h2>
+                <button class="button secondary" data-refresh="attendance" type="button">Refresh</button>
+              </div>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Employee</th>
+                      <th>Status</th>
+                      <th>Clock in</th>
+                      <th>Clock out</th>
+                    </tr>
+                  </thead>
+                  <tbody id="overview-attendance"></tbody>
+                </table>
+              </div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-heading">
+                <h2>Pending Leaves</h2>
+                <button class="button secondary" data-view-jump="leaves" type="button">Open</button>
+              </div>
+              <div class="stack-list" id="overview-leaves"></div>
+            </section>
+          </div>
+        </section>
+
+        <section class="view" id="view-employees" aria-labelledby="employees-title">
+          <div class="panel">
+            <div class="panel-heading">
+              <div>
+                <h2 id="employees-title">Employees</h2>
+                <p>Employee master records and employment status.</p>
+              </div>
+              <button class="button secondary" data-refresh="employees" type="button">Refresh</button>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Department</th>
+                    <th>Position</th>
+                    <th>Salary</th>
+                    <th>Status</th>
+                    <th>Face</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="employees-table"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <section class="view" id="view-register" aria-labelledby="register-title">
+          <form class="create-employee-grid" id="employee-form">
+            <section class="panel form-panel">
+              <div class="panel-heading">
+                <div>
+                  <h2 id="register-title">Register Employee</h2>
+                  <p>Create an employee account with face enrollment.</p>
+                </div>
+              </div>
+
+              <div class="form-section">
+                <div class="form-row">
+                  <label>
+                    Full name
+                    <input id="employee-name" name="name" autocomplete="name" required>
+                  </label>
+                  <label>
+                    Email
+                    <input id="employee-email" name="email" type="email" autocomplete="email" required>
+                  </label>
+                </div>
+                <div class="form-row">
+                  <label>
+                    Phone
+                    <input id="employee-phone" name="phone" autocomplete="tel">
+                  </label>
+                  <label>
+                    Join date
+                    <input id="employee-join-date" name="join_date" type="date" required>
+                  </label>
+                </div>
+                <div class="form-row">
+                  <label>
+                    Department
+                    <input id="employee-department" name="department" required>
+                  </label>
+                  <label>
+                    Position
+                    <input id="employee-position" name="position" required>
+                  </label>
+                </div>
+                <div class="form-row">
+                  <label>
+                    Salary type
+                    <select id="employee-salary-type" name="salary_type">
+                      <option value="monthly">Monthly</option>
+                      <option value="hourly">Hourly</option>
+                    </select>
+                  </label>
+                  <label>
+                    Base salary
+                    <input id="employee-base-salary" name="base_salary" type="number" min="0.01" step="0.01" required>
+                  </label>
+                </div>
+                <div class="form-row">
+                  <label>
+                    Bank account
+                    <input id="employee-bank-account" name="bank_account">
+                  </label>
+                  <label>
+                    Status
+                    <select id="employee-status" name="status">
+                      <option value="active">Active</option>
+                      <option value="inactive">Inactive</option>
+                    </select>
+                  </label>
+                </div>
+                <div class="form-row">
+                  <label>
+                    Username
+                    <input id="employee-username" name="username" autocomplete="username">
+                  </label>
+                  <label>
+                    Temporary password
+                    <input id="employee-temp-password" name="temp_password" type="password" autocomplete="new-password" value="Temp12345" required>
+                  </label>
+                </div>
+              </div>
+            </section>
+
+            <section class="panel form-panel">
+              <div class="panel-heading">
+                <div>
+                  <h2>Face Enrollment</h2>
+                  <p>Capture or upload a clear face image.</p>
+                </div>
+              </div>
+
+              <div class="face-panel">
+                <div class="camera-frame">
+                  <video id="face-video" class="hidden" autoplay muted playsinline></video>
+                  <img id="face-preview" alt="Selected face preview">
+                  <div class="face-guide" aria-hidden="true">
+                    <span class="face-guide-oval"></span>
+                    <span class="face-guide-line horizontal"></span>
+                    <span class="face-guide-line vertical"></span>
+                  </div>
+                  <div class="camera-placeholder" id="face-placeholder">No face image selected</div>
+                </div>
+                <canvas id="face-canvas" class="hidden"></canvas>
+                <div class="face-cues" aria-label="Face capture quality checks">
+                  <span>Centered</span>
+                  <span>Bright</span>
+                  <span>Still</span>
+                  <label class="toggle-row">
+                    <input id="face-sharp-toggle" type="checkbox" checked>
+                    Sharpen capture
+                  </label>
+                </div>
+                <div class="inline-actions face-actions">
+                  <button class="button secondary" id="start-camera-button" type="button">Start camera</button>
+                  <button class="button secondary" id="capture-face-button" type="button" disabled>Capture</button>
+                  <button class="button secondary" id="detect-face-button" type="button" disabled>Detect face</button>
+                  <label class="button secondary file-button" for="employee-face-image">Upload</label>
+                  <input id="employee-face-image" class="sr-only" name="face_image" type="file" accept="image/*">
+                </div>
+                <div class="face-quality" id="face-quality-status" role="status" aria-live="polite">
+                  <strong>Waiting for face image</strong>
+                  <span>Select or capture a face image before creating the employee.</span>
+                </div>
+                <button class="button primary" type="submit">Create employee</button>
+                <p class="form-error" id="employee-form-error" role="alert"></p>
+              </div>
+            </section>
+          </form>
+        </section>
+
+        <section class="view" id="view-attendance" aria-labelledby="attendance-title">
+          <div class="panel">
+            <div class="panel-heading">
+              <div>
+                <h2 id="attendance-title">Attendance</h2>
+                <p>Today attendance records across active employees.</p>
+              </div>
+              <button class="button secondary" data-refresh="attendance" type="button">Refresh</button>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Employee ID</th>
+                    <th>Date</th>
+                    <th>Status</th>
+                    <th>Clock in</th>
+                    <th>Clock out</th>
+                    <th>Hours</th>
+                  </tr>
+                </thead>
+                <tbody id="attendance-table"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="panel">
+            <div class="panel-heading">
+              <div>
+                <h2>Employee History</h2>
+                <p>View a specific employee&apos;s attendance for a given month.</p>
+              </div>
+              <form class="inline-actions report-controls" id="attendance-history-form">
+                <label>
+                  Employee
+                  <select id="history-employee-id" required>
+                    <option value="">Select employee</option>
+                  </select>
+                </label>
+                <label>
+                  Month
+                  <input id="history-month" name="month" type="number" min="1" max="12" required>
+                </label>
+                <label>
+                  Year
+                  <input id="history-year" name="year" type="number" min="2020" max="2100" required>
+                </label>
+                <button class="button secondary" type="submit">Load</button>
+              </form>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Status</th>
+                    <th>Clock in</th>
+                    <th>Clock out</th>
+                    <th>Hours</th>
+                    <th>Note</th>
+                  </tr>
+                </thead>
+                <tbody id="attendance-history-table"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <section class="view" id="view-timeclock" aria-labelledby="timeclock-title">
+          <div class="content-grid clock-grid">
+            <section class="panel clock-panel" data-clock-widget="admin">
+              <div class="panel-heading">
+                <div>
+                  <h2 id="timeclock-title">Daily Time Clock</h2>
+                  <p>Capture a face image to record today&apos;s check-in or check-out.</p>
+                </div>
+              </div>
+              <form class="clock-form" data-clock-form="admin">
+                <div class="camera-frame">
+                  <video class="hidden" data-clock-video="admin" autoplay muted playsinline></video>
+                  <img class="hidden" data-clock-preview="admin" alt="Attendance face preview">
+                  <div class="face-guide" aria-hidden="true">
+                    <span class="face-guide-oval"></span>
+                    <span class="face-guide-line horizontal"></span>
+                    <span class="face-guide-line vertical"></span>
+                  </div>
+                  <div class="camera-placeholder" data-clock-placeholder="admin">No attendance image selected</div>
+                </div>
+                <canvas class="hidden" data-clock-canvas="admin"></canvas>
+                <div class="inline-actions face-actions">
+                  <button class="button secondary" data-clock-camera="admin" type="button">Start camera</button>
+                  <button class="button secondary" data-clock-capture="admin" type="button" disabled>Capture</button>
+                  <label class="button secondary file-button" for="admin-clock-file">Upload</label>
+                  <input id="admin-clock-file" class="sr-only" data-clock-file="admin" type="file" accept="image/*">
+                </div>
+                <div class="inline-actions face-actions">
+                  <button class="button primary" data-clock-action="clock-in" type="submit">Check in</button>
+                  <button class="button secondary" data-clock-action="clock-out" type="submit">Check out</button>
+                </div>
+                <p class="form-error" data-clock-error="admin" role="alert"></p>
+                <div class="clock-result hidden" data-clock-result="admin" role="status" aria-live="polite"></div>
+              </form>
+            </section>
+
+            <section class="panel">
+              <div class="panel-heading">
+                <div>
+                  <h2>Today&apos;s Records</h2>
+                  <p>Latest attendance rows after check-in and check-out.</p>
+                </div>
+                <button class="button secondary" data-refresh="attendance" type="button">Refresh</button>
+              </div>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Employee</th>
+                      <th>Status</th>
+                      <th>Clock in</th>
+                      <th>Clock out</th>
+                      <th>Hours</th>
+                    </tr>
+                  </thead>
+                  <tbody id="timeclock-table"></tbody>
+                </table>
+              </div>
+            </section>
+          </div>
+        </section>
+
+        <section class="view" id="view-leaves" aria-labelledby="leaves-title">
+          <form class="panel form-panel" id="leave-form">
+            <div class="panel-heading">
+              <div>
+                <h2>Submit Leave Request</h2>
+                <p>Create a leave request for an employee.</p>
+              </div>
+            </div>
+            <div class="form-section">
+              <div class="form-row">
+                <label>
+                  Employee
+                  <select id="leave-employee-id" name="employee_id" required>
+                    <option value="">Select employee</option>
+                  </select>
+                </label>
+                <label>
+                  Leave type
+                  <select id="leave-type" name="leave_type" required>
+                    <option value="annual">Annual</option>
+                    <option value="sick">Sick</option>
+                    <option value="unpaid">Unpaid</option>
+                  </select>
+                </label>
+              </div>
+              <div class="form-row">
+                <label>
+                  Start date
+                  <input id="leave-start-date" name="start_date" type="date" required>
+                </label>
+                <label>
+                  End date
+                  <input id="leave-end-date" name="end_date" type="date" required>
+                </label>
+              </div>
+              <label>
+                Reason
+                <input id="leave-reason" name="reason" placeholder="Optional reason">
+              </label>
+            </div>
+            <button class="button primary" type="submit">Submit request</button>
+            <p class="form-error" id="leave-form-error" role="alert"></p>
+          </form>
+
+          <div class="panel">
+            <div class="panel-heading">
+              <div>
+                <h2 id="leaves-title">Leaves</h2>
+                <p>Review pending and historical leave requests.</p>
+              </div>
+              <div class="inline-actions">
+                <select id="leave-status-filter" aria-label="Leave status filter">
+                  <option value="">All statuses</option>
+                  <option value="pending">Pending</option>
+                  <option value="approved">Approved</option>
+                  <option value="rejected">Rejected</option>
+                </select>
+                <button class="button secondary" data-refresh="leaves" type="button">Refresh</button>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Employee ID</th>
+                    <th>Type</th>
+                    <th>Dates</th>
+                    <th>Days</th>
+                    <th>Status</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody id="leaves-table"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <section class="view" id="view-payroll" aria-labelledby="payroll-title">
+          <div class="content-grid payroll-grid">
+            <form class="panel form-panel" id="payroll-form">
+              <div class="panel-heading">
+                <div>
+                  <h2 id="payroll-title">Payroll Run</h2>
+                  <p>Create a monthly run for active employees.</p>
+                </div>
+              </div>
+              <div class="form-row">
+                <label>
+                  Month
+                  <input id="payroll-month" name="month" type="number" min="1" max="12" required>
+                </label>
+                <label>
+                  Year
+                  <input id="payroll-year" name="year" type="number" min="2020" max="2100" required>
+                </label>
+              </div>
+              <button class="button primary" type="submit">Run payroll</button>
+              <p class="form-error" id="payroll-error" role="alert"></p>
+            </form>
+
+            <section class="panel">
+              <div class="panel-heading">
+                <h2>Latest Result</h2>
+              </div>
+              <div class="payroll-result" id="payroll-result">
+                <p class="empty">No payroll run created in this session.</p>
+              </div>
+            </section>
+          </div>
+
+          <section class="panel payroll-data-panel">
+            <div class="panel-heading">
+              <div>
+                <h2>Payroll Data</h2>
+                <p>Load monthly attendance and payroll numbers for HR review.</p>
+              </div>
+              <form class="inline-actions report-controls" id="payroll-report-form">
+                <label>
+                  Month
+                  <input id="report-month" name="month" type="number" min="1" max="12" required>
+                </label>
+                <label>
+                  Year
+                  <input id="report-year" name="year" type="number" min="2020" max="2100" required>
+                </label>
+                <button class="button secondary" type="submit">Load data</button>
+              </form>
+            </div>
+            <p class="form-error" id="payroll-report-error" role="alert"></p>
+            <div class="payroll-report-summary" id="payroll-report-summary">
+              <p class="empty">Choose a period to load payroll data.</p>
+            </div>
+            <div class="report-table-grid">
+              <section>
+                <div class="subheading">Attendance source</div>
+                <div class="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Employee</th>
+                        <th>Date</th>
+                        <th>Status</th>
+                        <th>Clock in</th>
+                        <th>Clock out</th>
+                        <th>Hours</th>
+                      </tr>
+                    </thead>
+                    <tbody id="payroll-attendance-table"></tbody>
+                  </table>
+                </div>
+              </section>
+              <section>
+                <div class="subheading">Payroll items</div>
+                <div class="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Employee</th>
+                        <th>Base</th>
+                        <th>Present</th>
+                        <th>Overtime</th>
+                        <th>Deductions</th>
+                        <th>Gross</th>
+                        <th>Tax</th>
+                        <th>NSSF</th>
+                        <th>Net pay</th>
+                        <th>Payslip</th>
+                      </tr>
+                    </thead>
+                    <tbody id="payroll-items-table"></tbody>
+                  </table>
+                </div>
+              </section>
+            </div>
+          </section>
+        </section>
+
+        <section class="view" id="view-analytics" aria-labelledby="analytics-title">
+          <div class="panel">
+            <div class="panel-heading">
+              <div>
+                <h2 id="analytics-title">Analytics & Reports</h2>
+                <p>Workforce analytics, department summaries, and data exports.</p>
+              </div>
+              <div class="inline-actions">
+                <a class="button secondary" href="/portal" target="_blank">Employee Portal</a>
+              </div>
+            </div>
+
+            <div class="metric-grid" id="analytics-metrics">
+              <article class="metric">
+                <span>Total Active Employees</span>
+                <strong id="a-total-employees">—</strong>
+              </article>
+              <article class="metric">
+                <span>Present Today</span>
+                <strong id="a-present-today">—</strong>
+              </article>
+              <article class="metric">
+                <span>Late Today</span>
+                <strong id="a-late-today">—</strong>
+              </article>
+              <article class="metric">
+                <span>On Leave</span>
+                <strong id="a-on-leave">—</strong>
+              </article>
+            </div>
+
+            <div class="subheading">Headcount by Department</div>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>Department</th><th>Employees</th><th>Share</th></tr></thead>
+                <tbody id="analytics-dept-table"></tbody>
+              </table>
+            </div>
+
+            <div class="subheading" style="margin-top:24px">Payroll Cost Trends</div>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>Period</th><th>Total Cost</th><th>Tax</th><th>NSSF (Employee)</th><th>NSSF (Employer)</th><th>Employees</th><th>Status</th></tr></thead>
+                <tbody id="analytics-payroll-table"></tbody>
+              </table>
+            </div>
+
+            <div class="subheading" style="margin-top:24px">Leave Summary (This Year)</div>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>Type</th><th>Status</th><th>Count</th></tr></thead>
+                <tbody id="analytics-leave-table"></tbody>
+              </table>
+            </div>
+
+            <div class="subheading" style="margin-top:24px">Export Data</div>
+            <div class="inline-actions" style="padding:12px 0">
+              <form class="inline-actions" id="export-form">
+                <label>Month <input id="export-month" type="number" min="1" max="12" style="width:60px" required></label>
+                <label>Year <input id="export-year" type="number" min="2020" max="2100" style="width:80px" required></label>
+                <a class="button secondary" id="export-attendance-btn" href="#">📊 Attendance CSV</a>
+                <a class="button secondary" id="export-payroll-btn" href="#">💰 Payroll CSV</a>
+              </form>
+            </div>
+          </div>
+        </section>
+      </section>
+    </main>
+  </div>
+
+  <div class="modal-overlay hidden" id="edit-employee-modal">
+    <div class="modal">
+      <div class="modal-header">
+        <h2>Edit Employee</h2>
+        <button class="modal-close" id="close-edit-modal" type="button">&times;</button>
+      </div>
+      <form id="edit-employee-form">
+        <input type="hidden" id="edit-employee-id">
+        <div class="form-section">
+          <div class="form-row">
+            <label>Full name <input id="edit-name" name="name" required></label>
+            <label>Email <input id="edit-email" name="email" type="email" required></label>
+          </div>
+          <div class="form-row">
+            <label>Phone <input id="edit-phone" name="phone"></label>
+            <label>Department <input id="edit-department" name="department" required></label>
+          </div>
+          <div class="form-row">
+            <label>Position <input id="edit-position" name="position" required></label>
+            <label>
+              Salary type
+              <select id="edit-salary-type" name="salary_type">
+                <option value="monthly">Monthly</option>
+                <option value="hourly">Hourly</option>
+              </select>
+            </label>
+          </div>
+          <div class="form-row">
+            <label>Base salary <input id="edit-base-salary" name="base_salary" type="number" min="0.01" step="0.01" required></label>
+            <label>Bank account <input id="edit-bank-account" name="bank_account"></label>
+          </div>
+          <div class="form-row">
+            <label>
+              Status
+              <select id="edit-status" name="status">
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
+              </select>
+            </label>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="button secondary" type="button" id="cancel-edit-modal">Cancel</button>
+          <button class="button primary" type="submit">Save changes</button>
+        </div>
+        <p class="form-error" id="edit-employee-error" role="alert"></p>
+      </form>
+    </div>
+  </div>
+
+  <div class="toast hidden" id="toast" role="status" aria-live="polite"></div>
+  <script src="/static/admin.js" defer></script>
+</body>
+</html>

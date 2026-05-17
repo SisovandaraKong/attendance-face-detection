@@ -25,10 +25,10 @@ python scripts/seed_payroll.py
 uvicorn app.main:app --reload
 ```
 
-Default seeded login:
+Default seeded logins are loaded from `.env`:
 
-- Username: `admin`
-- Password: `admin123`
+- Admin: `ADMIN_USERNAME` / `ADMIN_PASSWORD`
+- HR: `HR_ADMIN_USERNAME` / `HR_ADMIN_PASSWORD`
 
 ## Key API flows
 

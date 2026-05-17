@@ -10,7 +10,7 @@ from app.services import report_service
 from app.routes._errors import run_service
 
 
-router = APIRouter(prefix="/reports", tags=["reports"])
+router = APIRouter(prefix="/api/reports", tags=["reports"])
 
 
 @router.get("/attendance")

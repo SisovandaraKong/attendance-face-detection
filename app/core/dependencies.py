@@ -11,7 +11,7 @@ from app.database import get_db
 from app.models.user import User
 
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 
 
 def api_response(data=None, message: str = "OK", success: bool = True) -> dict:

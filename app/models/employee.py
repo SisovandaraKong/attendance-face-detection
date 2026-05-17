@@ -4,8 +4,7 @@ from datetime import date
 from decimal import Decimal
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Date, Numeric, String, Text
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy import Date, JSON, Numeric, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin
@@ -33,7 +32,7 @@ class Employee(TimestampMixin, Base):
     bank_account: Mapped[str | None] = mapped_column(String(80))
     join_date: Mapped[date] = mapped_column(Date, nullable=False)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="active", index=True)
-    face_embedding: Mapped[list[float] | None] = mapped_column(JSONB)
+    face_embedding: Mapped[list[float] | None] = mapped_column(JSON)
     face_image_path: Mapped[str | None] = mapped_column(Text)
 
     user: Mapped["User | None"] = relationship(

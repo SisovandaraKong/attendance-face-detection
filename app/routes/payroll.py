@@ -11,7 +11,7 @@ from app.services import payroll_service, payslip_service
 from app.routes._errors import run_service
 
 
-router = APIRouter(prefix="/payroll", tags=["payroll"])
+router = APIRouter(prefix="/api/payroll", tags=["payroll"])
 
 
 @router.post("/run")

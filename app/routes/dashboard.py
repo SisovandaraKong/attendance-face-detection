@@ -10,7 +10,7 @@ from app.services import attendance_service, dashboard_service
 from app.routes._errors import run_service
 
 
-router = APIRouter(prefix="/dashboard", tags=["dashboard"])
+router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
 
 
 @router.get("/summary")

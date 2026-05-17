@@ -14,7 +14,7 @@ from app.services import employee_service
 from app.routes._errors import run_service
 
 
-router = APIRouter(prefix="/employees", tags=["employees"])
+router = APIRouter(prefix="/api/employees", tags=["employees"])
 
 
 @router.get("")
@@ -59,6 +59,15 @@ async def create_employee(
     )
     image_bytes = await face_image.read()
     return await run_service(lambda: employee_service.create_employee(payload, image_bytes, db))
+
+
+@router.post("/face-quality")
+async def inspect_face_quality(
+    face_image: UploadFile = File(...),
+    _: User = Depends(require_roles("admin", "hr")),
+):
+    image_bytes = await face_image.read()
+    return await run_service(lambda: employee_service.inspect_face(image_bytes))
 
 
 @router.get("/{employee_id}")

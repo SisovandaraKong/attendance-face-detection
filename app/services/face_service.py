@@ -3,26 +3,41 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import pickle
 from pathlib import Path
 import os
 
 import cv2
 import mediapipe as mp
 import numpy as np
+from mediapipe.tasks import python as mp_python
+from mediapipe.tasks.python import vision
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from tensorflow.keras.applications.mobilenet_v2 import MobileNetV2, preprocess_input
 from tensorflow.keras.models import Model, load_model
 
 from app.models.employee import Employee
+from utils.features import FEATURE_SIZE, extract_features
 
 
 FACE_MATCH_THRESHOLD = 0.75
+FACE_CLASSIFIER_THRESHOLD = float(os.getenv("FACE_CLASSIFIER_THRESHOLD", "0.75"))
 MIN_FACE_WIDTH_RATIO = 0.18
 MIN_FACE_HEIGHT_RATIO = 0.18
-MIN_BLUR_VARIANCE = 80.0
+MIN_BLUR_VARIANCE = 45.0
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+MODEL_DIR = Path(os.getenv("FACE_MODEL_DIR", str(PROJECT_ROOT / "models")))
+FACE_LANDMARKER_MODEL_PATH = Path(
+    os.getenv("FACE_LANDMARKER_MODEL_PATH", str(MODEL_DIR / "face_landmarker.task"))
+)
+FACE_CLASSIFIER_MODEL_PATH = Path(
+    os.getenv("FACE_CLASSIFIER_MODEL_PATH", str(MODEL_DIR / "face_model.h5"))
+)
+FACE_LABEL_ENCODER_PATH = Path(
+    os.getenv("FACE_LABEL_ENCODER_PATH", str(MODEL_DIR / "label_encoder.pkl"))
+)
+FACE_SCALER_PATH = Path(os.getenv("FACE_SCALER_PATH", str(MODEL_DIR / "scaler.pkl")))
 FACE_STORAGE_DIR = Path(os.getenv("FACE_STORAGE_DIR", "storage/faces"))
-FACE_EMBEDDING_MODEL_PATH = os.getenv("FACE_EMBEDDING_MODEL_PATH")
 
 
 @dataclass(frozen=True)
@@ -45,47 +60,70 @@ class FaceServiceError(RuntimeError):
     """Raised when image decoding or face processing cannot complete."""
 
 
-_face_detection: mp.solutions.face_detection.FaceDetection | None = None
-_face_mesh: mp.solutions.face_mesh.FaceMesh | None = None
-_embedding_model: Model | None = None
+_quality_face_landmarker: vision.FaceLandmarker | None = None
+_face_landmarker: vision.FaceLandmarker | None = None
+_classifier_model: Model | None = None
+_label_encoder = None
+_feature_scaler = None
 
 
-def _get_face_detection() -> mp.solutions.face_detection.FaceDetection:
-    global _face_detection
-    if _face_detection is None:
-        _face_detection = mp.solutions.face_detection.FaceDetection(
-            model_selection=1,
-            min_detection_confidence=0.55,
+def _ensure_landmarker_model() -> None:
+    if not FACE_LANDMARKER_MODEL_PATH.exists():
+        raise FaceServiceError(f"Face landmark model not found: {FACE_LANDMARKER_MODEL_PATH}")
+
+
+def _to_mp_image(image_bgr: np.ndarray) -> mp.Image:
+    image_rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
+    return mp.Image(image_format=mp.ImageFormat.SRGB, data=image_rgb)
+
+
+def _get_quality_face_landmarker() -> vision.FaceLandmarker:
+    global _quality_face_landmarker
+    if _quality_face_landmarker is None:
+        _ensure_landmarker_model()
+        base_options = mp_python.BaseOptions(model_asset_path=str(FACE_LANDMARKER_MODEL_PATH))
+        options = vision.FaceLandmarkerOptions(
+            base_options=base_options,
+            num_faces=2,
+            min_face_detection_confidence=0.55,
+            min_face_presence_confidence=0.55,
+            min_tracking_confidence=0.55,
+            output_face_blendshapes=False,
+            output_facial_transformation_matrixes=False,
         )
-    return _face_detection
+        _quality_face_landmarker = vision.FaceLandmarker.create_from_options(options)
+    return _quality_face_landmarker
 
 
-def _get_face_mesh() -> mp.solutions.face_mesh.FaceMesh:
-    global _face_mesh
-    if _face_mesh is None:
-        _face_mesh = mp.solutions.face_mesh.FaceMesh(
-            static_image_mode=True,
-            max_num_faces=2,
-            refine_landmarks=True,
-            min_detection_confidence=0.55,
+def _get_face_landmarker() -> vision.FaceLandmarker:
+    global _face_landmarker
+    if _face_landmarker is None:
+        _ensure_landmarker_model()
+        base_options = mp_python.BaseOptions(model_asset_path=str(FACE_LANDMARKER_MODEL_PATH))
+        options = vision.FaceLandmarkerOptions(
+            base_options=base_options,
+            num_faces=1,
+            min_face_detection_confidence=0.3,
+            min_face_presence_confidence=0.3,
+            min_tracking_confidence=0.3,
+            output_face_blendshapes=False,
+            output_facial_transformation_matrixes=True,
         )
-    return _face_mesh
+        _face_landmarker = vision.FaceLandmarker.create_from_options(options)
+    return _face_landmarker
 
 
-def _get_embedding_model() -> Model:
-    global _embedding_model
-    if _embedding_model is None:
-        if FACE_EMBEDDING_MODEL_PATH and Path(FACE_EMBEDDING_MODEL_PATH).exists():
-            _embedding_model = load_model(FACE_EMBEDDING_MODEL_PATH, compile=False)
-        else:
-            base_model = MobileNetV2(
-                include_top=False,
-                weights=None,
-                pooling="avg",
-                input_shape=(160, 160, 3),
-            )
-            _embedding_model = Model(inputs=base_model.input, outputs=base_model.output)
-    return _embedding_model
+def _get_classifier_bundle() -> tuple[Model | None, object | None, object | None]:
+    global _classifier_model, _label_encoder, _feature_scaler
+    if _classifier_model is None and FACE_CLASSIFIER_MODEL_PATH.exists():
+        _classifier_model = load_model(FACE_CLASSIFIER_MODEL_PATH, compile=False)
+    if _label_encoder is None and FACE_LABEL_ENCODER_PATH.exists():
+        with FACE_LABEL_ENCODER_PATH.open("rb") as handle:
+            _label_encoder = pickle.load(handle)
+    if _feature_scaler is None and FACE_SCALER_PATH.exists():
+        with FACE_SCALER_PATH.open("rb") as handle:
+            _feature_scaler = pickle.load(handle)
+    return _classifier_model, _label_encoder, _feature_scaler
 
 
 def _decode_image(image_bytes: bytes) -> np.ndarray:
@@ -97,22 +135,22 @@ def _decode_image(image_bytes: bytes) -> np.ndarray:
 
 
 def _detect_faces(image_bgr: np.ndarray) -> tuple[list[FaceBox], list[float]]:
-    image_rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
     height, width = image_bgr.shape[:2]
-    result = _get_face_detection().process(image_rgb)
-    if not result.detections:
+    result = _get_quality_face_landmarker().detect(_to_mp_image(image_bgr))
+    if not result.face_landmarks:
         return [], []
 
     boxes: list[FaceBox] = []
     confidences: list[float] = []
-    for detection in result.detections:
-        location = detection.location_data.relative_bounding_box
-        x_min = max(int(location.xmin * width), 0)
-        y_min = max(int(location.ymin * height), 0)
-        x_max = min(int((location.xmin + location.width) * width), width)
-        y_max = min(int((location.ymin + location.height) * height), height)
+    for landmarks in result.face_landmarks:
+        x_values = [landmark.x for landmark in landmarks]
+        y_values = [landmark.y for landmark in landmarks]
+        x_min = max(int(min(x_values) * width), 0)
+        y_min = max(int(min(y_values) * height), 0)
+        x_max = min(int(max(x_values) * width), width)
+        y_max = min(int(max(y_values) * height), height)
         boxes.append(FaceBox(x_min=x_min, y_min=y_min, x_max=x_max, y_max=y_max))
-        confidences.append(float(detection.score[0]) if detection.score else 0.0)
+        confidences.append(1.0)
     return boxes, confidences
 
 
@@ -122,12 +160,11 @@ def _blur_variance(face_bgr: np.ndarray) -> float:
 
 
 def _is_frontal_face(image_bgr: np.ndarray) -> bool:
-    image_rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
-    result = _get_face_mesh().process(image_rgb)
-    if not result.multi_face_landmarks or len(result.multi_face_landmarks) != 1:
+    result = _get_quality_face_landmarker().detect(_to_mp_image(image_bgr))
+    if not result.face_landmarks or len(result.face_landmarks) != 1:
         return False
 
-    landmarks = result.multi_face_landmarks[0].landmark
+    landmarks = result.face_landmarks[0]
     left_eye = landmarks[33]
     right_eye = landmarks[263]
     nose = landmarks[1]
@@ -173,6 +210,42 @@ def _normalize_embedding(vector: np.ndarray) -> list[float]:
     if norm == 0:
         raise FaceServiceError("Face embedding is empty")
     return (vector / norm).tolist()
+
+
+def _extract_landmark_features(image_bgr: np.ndarray) -> np.ndarray:
+    result = _get_face_landmarker().detect(_to_mp_image(image_bgr))
+    faces = result.face_landmarks or []
+    if len(faces) != 1:
+        raise FaceServiceError("Expected exactly one face")
+
+    transformation = None
+    if result.facial_transformation_matrixes:
+        transformation = result.facial_transformation_matrixes[0]
+
+    features = np.asarray(extract_features(faces[0], transformation), dtype=np.float32)
+    if features.size != FEATURE_SIZE:
+        raise FaceServiceError("Unexpected face feature size")
+
+    _, _, scaler = _get_classifier_bundle()
+    if scaler is not None:
+        features = np.asarray(scaler.transform(features.reshape(1, -1))[0], dtype=np.float32)
+    return features
+
+
+def _predict_identity(features: np.ndarray) -> tuple[str | None, float]:
+    classifier_model, label_encoder, _ = _get_classifier_bundle()
+    if classifier_model is None or label_encoder is None:
+        return None, 0.0
+
+    batch = np.asarray(features, dtype=np.float32).reshape(1, -1)
+    probabilities = classifier_model.predict(batch, verbose=0)[0]
+    best_index = int(np.argmax(probabilities))
+    confidence = float(probabilities[best_index])
+    if confidence < FACE_CLASSIFIER_THRESHOLD:
+        return None, confidence
+
+    predicted_label = str(label_encoder.inverse_transform([best_index])[0])
+    return predicted_label, confidence
 
 
 def verify_face_quality(image_bytes: bytes) -> dict:
@@ -224,15 +297,10 @@ def verify_face_quality(image_bytes: bytes) -> dict:
 
 
 def extract_embedding(image_bytes: bytes) -> list[float]:
-    """Extract a deterministic 128-dimensional face embedding from one face image."""
+    """Extract the trained 1447-dimensional landmark feature vector for one face image."""
     image_bgr = _decode_image(image_bytes)
-    face_crop = _largest_face_crop(image_bgr)
-    face_rgb = cv2.cvtColor(face_crop, cv2.COLOR_BGR2RGB)
-    resized = cv2.resize(face_rgb, (160, 160), interpolation=cv2.INTER_AREA)
-    batch = np.expand_dims(resized.astype(np.float32), axis=0)
-    features = _get_embedding_model().predict(preprocess_input(batch), verbose=0)[0]
-    folded = _project_to_128(features)
-    return [round(float(value), 8) for value in _normalize_embedding(folded)]
+    features = _extract_landmark_features(image_bgr)
+    return [round(float(value), 8) for value in features.tolist()]
 
 
 def compare_faces(embedding1: list[float], embedding2: list[float]) -> dict:
@@ -256,7 +324,15 @@ def compare_faces(embedding1: list[float], embedding2: list[float]) -> dict:
 
 async def identify_employee(image_bytes: bytes, db: AsyncSession) -> dict | None:
     """Identify the active employee whose stored embedding best matches the image."""
-    embedding = extract_embedding(image_bytes)
+    try:
+        image_bgr = _decode_image(image_bytes)
+        features = _extract_landmark_features(image_bgr)
+    except FaceServiceError:
+        return None
+
+    embedding = [round(float(value), 8) for value in features.tolist()]
+
+    # ── Path 1: Compare against stored embeddings ──
     result = await db.execute(
         select(Employee).where(
             Employee.status == "active",
@@ -276,14 +352,35 @@ async def identify_employee(image_bytes: bytes, db: AsyncSession) -> dict | None
             best_similarity = similarity
             best_employee = employee
 
-    if best_employee is None or best_similarity < FACE_MATCH_THRESHOLD:
-        return None
+    if best_employee is not None and best_similarity >= FACE_MATCH_THRESHOLD:
+        return {
+            "employee_id": best_employee.id,
+            "name": best_employee.name,
+            "similarity": round(best_similarity, 6),
+        }
 
-    return {
-        "employee_id": best_employee.id,
-        "name": best_employee.name,
-        "similarity": round(best_similarity, 6),
-    }
+    # ── Path 2: Fallback to trained classifier model ──
+    predicted_label, confidence = _predict_identity(features)
+    if predicted_label is not None and confidence >= FACE_CLASSIFIER_THRESHOLD:
+        display_name = " ".join(predicted_label.replace("_", " ").split()).strip()
+        matched = await db.scalar(
+            select(Employee).where(
+                Employee.status == "active",
+                Employee.name == display_name,
+            )
+        )
+        if matched is not None:
+            return {
+                "employee_id": matched.id,
+                "name": matched.name,
+                "similarity": round(confidence, 6),
+            }
+
+    return None
+
+
+def _normalize_name(value: str) -> str:
+    return "_".join(value.strip().split()).lower()
 
 
 async def register_face(image_bytes: bytes, employee_id: int, db: AsyncSession) -> dict:

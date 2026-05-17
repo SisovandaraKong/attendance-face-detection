@@ -11,7 +11,7 @@ from app.services.auth_service import login as login_service
 from app.routes._errors import run_service
 
 
-router = APIRouter(prefix="/auth", tags=["auth"])
+router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 
 @router.post("/login")

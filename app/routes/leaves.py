@@ -11,7 +11,7 @@ from app.services import leave_service
 from app.routes._errors import run_service
 
 
-router = APIRouter(prefix="/leaves", tags=["leaves"])
+router = APIRouter(prefix="/api/leaves", tags=["leaves"])
 
 
 @router.post("")
