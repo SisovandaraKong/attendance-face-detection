@@ -50,7 +50,7 @@ The system is implemented and documented as a banking staff attendance platform 
 - audit logs
 - system users
 
-The current seeded example models one bank office shift at headquarters, but the schema is intentionally broader to support thesis discussion around branch-based operations and future payroll integration.
+The current seeded example models one bank office shift at headquarters, but the schema is intentionally broader to support thesis discussion around branch-based operations and payroll review workflows.
 
 ## Current Scope
 
@@ -75,7 +75,7 @@ Not implemented as full production features:
 - refresh-token session lifecycle
 - full attendance adjustment approval workflow UI
 - multi-branch role scoping
-- payroll integration
+- final payroll export / payment integration
 
 ## Methodology
 
@@ -452,12 +452,17 @@ pip install -r requirements.txt
 cp .env.example .env
 ```
 
+Before the first database-backed startup, update `.env` with a strong `APP_SECRET_KEY`
+and non-default `ADMIN_PASSWORD` / `HR_ADMIN_PASSWORD`. Those bootstrap credentials
+are only used when the seeded admin users do not already exist.
+
 ### Database Setup
 
 ```bash
 docker compose -f postgres/docker-compose.yml up -d
 psql postgresql://attendance:attendance@localhost:5168/attendance -f database/migrations/0001_initial_schema.sql
 psql postgresql://attendance:attendance@localhost:5168/attendance -f database/migrations/0002_seed_baseline.sql
+psql postgresql://attendance:attendance@localhost:5168/attendance -f database/migrations/0003_payroll_schema.sql
 ```
 
 ### Model Asset Setup
@@ -481,6 +486,26 @@ python src/train.py
 ```bash
 uvicorn main:app --reload --host 0.0.0.0 --port 8168
 ```
+
+`HOST` and `PORT` are controlled by the `uvicorn` command above, not by `.env`.
+
+### Docker Compose Demo
+
+From the repo root:
+
+```bash
+docker compose up --build
+```
+
+This starts:
+
+- PostgreSQL on `localhost:5168`
+- FastAPI backend on `http://localhost:8168`
+- Next.js admin portal on `http://localhost:3000`
+
+For webcam-backed kiosk recognition inside Docker, you may need to expose the host
+camera device manually in `docker-compose.yml`. For a thesis demo focused on the
+admin portal and database-backed workflows, the Compose stack is the simpler path.
 
 ### Default URLs
 
@@ -533,7 +558,7 @@ The current implementation is intentionally thesis-scoped. Important limitations
 - the liveness layer is lightweight and not a substitute for industrial anti-spoofing
 - the deployment model currently assumes a single active kiosk camera per backend process
 - role enforcement is basic and does not yet include fine-grained field-level or branch-level restrictions
-- payroll integration is future-facing rather than implemented
+- final payroll export and payment integration are future-facing rather than implemented
 
 ## Future Work
 
@@ -543,7 +568,7 @@ Reasonable extensions after this thesis include:
 - role-scoped branch administration
 - attendance adjustment and approval workflow completion
 - Alembic-based incremental migrations beyond the current SQL migration approach
-- payroll and leave integration
+- leave integration and downstream payroll export
 - multi-kiosk orchestration and device health management
 
 ## Troubleshooting

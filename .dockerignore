@@ -1,0 +1,11 @@
+.git
+.venv
+venv
+__pycache__
+*.pyc
+.env
+attendance.db
+logs
+dataset
+training_results.png
+.pytest_cache

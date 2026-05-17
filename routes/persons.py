@@ -10,11 +10,11 @@ and how many dataset images exist for each person.
 
 import os
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from sqlalchemy import select
 
 from dependencies.auth import require_roles
-from database.models import Branch, Department, Employee
+from database.models import Branch, Department, Employee, FaceProfile
 from database.session import get_db_session
 from schemas.attendance import (
     APIResponse,
@@ -75,11 +75,17 @@ def _list_persons() -> list[PersonInfo]:
             .join(Department, Department.id == Employee.department_id)
             .order_by(Employee.full_name.asc())
         ).all()
+        active_profile_employee_ids = set(
+            session.scalars(
+                select(FaceProfile.employee_id).where(FaceProfile.profile_status == "ACTIVE")
+            ).all()
+        )
 
     persons = []
     for employee, branch, department in rows:
         dataset_key = _dataset_key(employee.full_name)
         image_count = dataset_counts.get(dataset_key, 0)
+        has_profile = employee.id in active_profile_employee_ids
         persons.append(PersonInfo(
             id=employee.id,
             employee_code=employee.employee_code,
@@ -87,10 +93,10 @@ def _list_persons() -> list[PersonInfo]:
             branch_name=branch.name,
             department_name=department.name,
             employment_status=employee.employment_status,
-            enrollment_status=employee.face_enrollment_status,
+            enrollment_status="ENROLLED" if has_profile else employee.face_enrollment_status,
             dataset_key=dataset_key,
             image_count=image_count,
-            complete=(image_count >= TOTAL_IMAGES_NEEDED),
+            complete=has_profile or (image_count >= TOTAL_IMAGES_NEEDED),
             is_active=employee.is_active,
         ))
     return persons
@@ -206,6 +212,49 @@ async def api_update_person(employee_id: int, payload: EmployeeUpdateRequest) ->
         data={"employee_id": employee_id},
         message="Employee updated",
     )
+
+
+@router.post("/{employee_id}/face-profile", response_model=APIResponse)
+async def api_enroll_face_profile(
+    employee_id: int,
+    request: Request,
+    samples: list[UploadFile] = File(...),
+) -> APIResponse:
+    """Create or replace the active employee face profile from uploaded samples."""
+    if not samples:
+        raise HTTPException(status_code=400, detail="At least one face sample is required")
+
+    face_service = getattr(request.app.state, "face_service", None)
+    if face_service is None or not face_service.is_ready:
+        raise HTTPException(status_code=503, detail="Face model is not ready")
+
+    image_bytes_list: list[bytes] = []
+    for sample in samples:
+        if sample.content_type and not sample.content_type.startswith("image/"):
+            raise HTTPException(status_code=400, detail=f"{sample.filename} is not an image")
+        content = await sample.read()
+        if not content:
+            raise HTTPException(status_code=400, detail=f"{sample.filename} is empty")
+        image_bytes_list.append(content)
+
+    try:
+        result = face_service.enroll_employee_profile(
+            employee_id=employee_id,
+            image_bytes_list=image_bytes_list,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    if not result["success"]:
+        raise HTTPException(status_code=400, detail=result)
+
+    write_audit_log(
+        action="EMPLOYEE_FACE_PROFILE_ENROLL",
+        entity_type="employee",
+        entity_id=str(employee_id),
+        new_values=result["data"],
+    )
+    return APIResponse(success=True, data=result["data"], message=result["message"])
 
 @router.get("/list", response_model=PersonListResponse)
 async def api_list_persons() -> PersonListResponse:
