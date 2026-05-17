@@ -45,6 +45,7 @@ Thumbs.db
 logs/*.csv
 face_attendance/
 dataset/
+exports/
 
 # Model/training outputs
 models/*.h5

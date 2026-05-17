@@ -307,3 +307,67 @@ class AuditLog(Base):
     old_values: Mapped[dict | None] = mapped_column(JSON)
     new_values: Mapped[dict | None] = mapped_column(JSON)
     metadata_json: Mapped[dict | None] = mapped_column("metadata", JSON)
+
+
+class SalaryConfig(Base):
+    __tablename__ = "salary_configs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    employee_id: Mapped[int] = mapped_column(ForeignKey("employees.id"), nullable=False)
+    effective_from: Mapped[date] = mapped_column(Date, nullable=False)
+    base_salary: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False)
+    overtime_rate_multiplier: Mapped[float] = mapped_column(
+        Numeric(5, 2), nullable=False, default=1.5
+    )
+    transport_allowance: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False, default=0)
+    meal_allowance: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False, default=0)
+    grade: Mapped[str] = mapped_column(String(20), nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
+
+class DeductionRule(Base):
+    __tablename__ = "deduction_rules"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    rule_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    value: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False)
+    applies_to_grade: Mapped[str | None] = mapped_column(String(20))
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
+
+class PayrollRecord(Base):
+    __tablename__ = "payroll_records"
+    __table_args__ = (
+        UniqueConstraint(
+            "employee_id",
+            "period_month",
+            "period_year",
+            name="uq_payroll_employee_period",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    employee_id: Mapped[int] = mapped_column(ForeignKey("employees.id"), nullable=False)
+    period_month: Mapped[int] = mapped_column(Integer, nullable=False)
+    period_year: Mapped[int] = mapped_column(Integer, nullable=False)
+    working_days_in_period: Mapped[int] = mapped_column(Integer, nullable=False)
+    days_present: Mapped[int] = mapped_column(Integer, nullable=False)
+    days_absent: Mapped[int] = mapped_column(Integer, nullable=False)
+    days_late: Mapped[int] = mapped_column(Integer, nullable=False)
+    total_late_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    total_overtime_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    base_salary: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False)
+    transport_allowance: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False, default=0)
+    meal_allowance: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False, default=0)
+    overtime_pay: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False, default=0)
+    gross_pay: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False)
+    deductions_json: Mapped[dict] = mapped_column(JSON, nullable=False)
+    total_deductions: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False, default=0)
+    net_pay: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="DRAFT")
+    approved_by: Mapped[int | None] = mapped_column(ForeignKey("system_users.id"))
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    generated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )

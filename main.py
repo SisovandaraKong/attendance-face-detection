@@ -19,12 +19,16 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
+# ── Load .env before anything reads os.getenv ───────────────
+load_dotenv()
+
 from database.session import init_db
 from routes import (
     attendance,
     auth,
     dashboard,
     master_data,
+    payroll,
     persons,
     public,
     recognition_events,
@@ -33,9 +37,6 @@ from routes import (
     system,
 )
 from services.face_service import FaceService
-
-# ── Load .env before anything reads os.getenv ───────────────
-load_dotenv()
 
 logging.basicConfig(
     level=logging.INFO,
@@ -101,4 +102,5 @@ app.include_router(recognition_events.router)
 app.include_router(reports.router)
 app.include_router(auth.router)
 app.include_router(master_data.router)
+app.include_router(payroll.router)
 app.include_router(system.router)

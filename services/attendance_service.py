@@ -431,19 +431,25 @@ def record_recognition_event(
     liveness_message: str | None = None,
     source_id: str | None = None,
     snapshot_reference: str | None = None,
+    employee_id: int | None = None,
+    face_profile_id: int | None = None,
+    predicted_label: str | None = None,
 ) -> RecognitionEvent:
     now = datetime.now()
-    display_name = name.replace("_", " ").strip()
+    display_name = (predicted_label or name.replace("_", " ")).strip()
     mode_code, mode_label = _parse_mode(event_mode)
 
     with get_db_session() as session:
         branch, department, fallback_shift, device = _ensure_baseline_entities(session)
-        employee = _find_employee_by_name(session, display_name)
+        employee = session.get(Employee, employee_id) if employee_id is not None else None
+        if employee is None:
+            employee = _find_employee_by_name(session, display_name)
 
         event = RecognitionEvent(
             occurred_at=now,
             kiosk_device_id=device.id,
             employee_id=employee.id if employee else None,
+            face_profile_id=face_profile_id,
             predicted_label=display_name,
             confidence=confidence,
             liveness_score=liveness_score,
@@ -548,8 +554,11 @@ def write_record(
     liveness_message: str | None = None,
     source_id: str | None = None,
     snapshot_reference: str | None = None,
+    employee_id: int | None = None,
+    face_profile_id: int | None = None,
+    predicted_label: str | None = None,
 ) -> AttendanceRecord:
-    display_name = name.replace("_", " ").strip()
+    display_name = (predicted_label or name.replace("_", " ")).strip()
     _, mode_label = _parse_mode(event_mode)
     event = record_recognition_event(
         name=name,
@@ -560,6 +569,9 @@ def write_record(
         liveness_message=liveness_message,
         source_id=source_id,
         snapshot_reference=snapshot_reference,
+        employee_id=employee_id,
+        face_profile_id=face_profile_id,
+        predicted_label=predicted_label,
     )
     business_outcome = (event.metadata_json or {}).get("business_outcome")
 
